@@ -1,0 +1,616 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>1180</width>
+    <height>760</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Ingresos y Gastos</string>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="layoutPrincipal">
+    <item>
+     <layout class="QHBoxLayout" name="layoutSuperior">
+      <item>
+       <widget class="QToolButton" name="btnAnterior">
+        <property name="toolTip">
+         <string>Período anterior</string>
+        </property>
+        <property name="text">
+         <string>◀</string>
+        </property>
+        <property name="autoRaise">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="labelPeriodo">
+        <property name="minimumSize">
+         <size>
+          <width>190</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="font">
+         <font>
+          <pointsize>14</pointsize>
+          <bold>true</bold>
+         </font>
+        </property>
+        <property name="text">
+         <string>Noviembre 2026</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QToolButton" name="btnSiguiente">
+        <property name="toolTip">
+         <string>Período siguiente</string>
+        </property>
+        <property name="text">
+         <string>▶</string>
+        </property>
+        <property name="autoRaise">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QComboBox" name="comboVista">
+        <property name="toolTip">
+         <string>Ver un mes, un año o todo</string>
+        </property>
+        <item>
+         <property name="text">
+          <string>Mes</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Año</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Todo</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="btnHoy">
+        <property name="toolTip">
+         <string>Volver al período actual</string>
+        </property>
+        <property name="text">
+         <string>Hoy</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="espaciadorSuperior">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+      <item>
+       <layout class="QVBoxLayout" name="layoutSaldo">
+        <property name="spacing">
+         <number>0</number>
+        </property>
+        <item>
+         <widget class="QLabel" name="labelSaldoTitulo">
+          <property name="text">
+           <string>Saldo de la cuenta</string>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="labelSaldo">
+          <property name="font">
+           <font>
+            <pointsize>20</pointsize>
+            <bold>true</bold>
+           </font>
+          </property>
+          <property name="text">
+           <string>$ 0,00</string>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QToolButton" name="btnMenu">
+        <property name="toolTip">
+         <string>Menú</string>
+        </property>
+        <property name="text">
+         <string>☰</string>
+        </property>
+        <property name="font">
+         <font>
+          <pointsize>14</pointsize>
+         </font>
+        </property>
+        <property name="popupMode">
+         <enum>QToolButton::InstantPopup</enum>
+        </property>
+        <property name="autoRaise">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <layout class="QHBoxLayout" name="layoutTarjetas">
+      <item>
+       <widget class="QFrame" name="frameIngresos">
+        <property name="frameShape">
+         <enum>QFrame::StyledPanel</enum>
+        </property>
+        <layout class="QVBoxLayout" name="layoutIngresos">
+         <item>
+          <widget class="QLabel" name="labelIngresosTitulo">
+           <property name="text">
+            <string>Ingresos del período</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="labelIngresos">
+           <property name="font">
+            <font>
+             <pointsize>16</pointsize>
+             <bold>true</bold>
+            </font>
+           </property>
+           <property name="text">
+            <string>$ 0,00</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QFrame" name="frameGastos">
+        <property name="frameShape">
+         <enum>QFrame::StyledPanel</enum>
+        </property>
+        <layout class="QVBoxLayout" name="layoutGastos">
+         <item>
+          <widget class="QLabel" name="labelGastosTitulo">
+           <property name="text">
+            <string>Gastos del período</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="labelGastos">
+           <property name="font">
+            <font>
+             <pointsize>16</pointsize>
+             <bold>true</bold>
+            </font>
+           </property>
+           <property name="text">
+            <string>$ 0,00</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QFrame" name="frameResultado">
+        <property name="frameShape">
+         <enum>QFrame::StyledPanel</enum>
+        </property>
+        <layout class="QVBoxLayout" name="layoutResultado">
+         <item>
+          <widget class="QLabel" name="labelResultadoTitulo">
+           <property name="text">
+            <string>Resultado del período (ingresos − gastos)</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="labelResultado">
+           <property name="font">
+            <font>
+             <pointsize>16</pointsize>
+             <bold>true</bold>
+            </font>
+           </property>
+           <property name="text">
+            <string>$ 0,00</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item>
+     <widget class="QTabWidget" name="tabWidget">
+      <property name="currentIndex">
+       <number>0</number>
+      </property>
+      <widget class="QWidget" name="tabMovimientos">
+       <attribute name="title">
+        <string>Movimientos</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="layoutMovimientos">
+        <item>
+         <layout class="QHBoxLayout" name="layoutFiltros">
+          <item>
+           <widget class="QLineEdit" name="inputBuscar">
+            <property name="placeholderText">
+             <string>Buscar por descripción, categoría o monto…</string>
+            </property>
+            <property name="clearButtonEnabled">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="comboFiltroTipo">
+            <item>
+             <property name="text">
+              <string>Ingresos y gastos</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>Solo ingresos</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>Solo gastos</string>
+             </property>
+            </item>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <widget class="QTableView" name="tablaMovimientos">
+          <property name="contextMenuPolicy">
+           <enum>Qt::CustomContextMenu</enum>
+          </property>
+          <property name="editTriggers">
+           <set>QAbstractItemView::NoEditTriggers</set>
+          </property>
+          <property name="alternatingRowColors">
+           <bool>true</bool>
+          </property>
+          <property name="selectionMode">
+           <enum>QAbstractItemView::ExtendedSelection</enum>
+          </property>
+          <property name="selectionBehavior">
+           <enum>QAbstractItemView::SelectRows</enum>
+          </property>
+          <property name="sortingEnabled">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="layoutBotones">
+          <item>
+           <widget class="QPushButton" name="btnNuevoIngreso">
+            <property name="toolTip">
+             <string>Agregar un ingreso (Ctrl+I)</string>
+            </property>
+            <property name="text">
+             <string>+ Ingreso</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnNuevoGasto">
+            <property name="toolTip">
+             <string>Agregar un gasto (Ctrl+G)</string>
+            </property>
+            <property name="text">
+             <string>− Gasto</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="espaciadorBotones">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>40</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnEditar">
+            <property name="text">
+             <string>Editar</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnEliminar">
+            <property name="text">
+             <string>Eliminar</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="tabGraficos">
+       <attribute name="title">
+        <string>Gráficos</string>
+       </attribute>
+       <layout class="QVBoxLayout" name="layoutGraficos" stretch="5,4">
+        <item>
+         <widget class="GraficoBarras" name="graficoBarras" native="true">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+            <horstretch>0</horstretch>
+            <verstretch>1</verstretch>
+           </sizepolicy>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="layoutTortas">
+          <item>
+           <widget class="GraficoTorta" name="tortaGastos" native="true">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+              <horstretch>1</horstretch>
+              <verstretch>1</verstretch>
+             </sizepolicy>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="GraficoTorta" name="tortaIngresos" native="true">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+              <horstretch>1</horstretch>
+              <verstretch>1</verstretch>
+             </sizepolicy>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+      <widget class="QWidget" name="tabTotales">
+       <attribute name="title">
+        <string>Totales</string>
+       </attribute>
+       <layout class="QHBoxLayout" name="layoutTotales" stretch="4,3,4">
+        <item>
+         <layout class="QVBoxLayout" name="layoutTotalesMeses">
+          <item>
+           <widget class="QLabel" name="labelTotalesMeses">
+            <property name="font">
+             <font>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="text">
+             <string>Por mes</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QTableWidget" name="tablaMeses">
+            <property name="editTriggers">
+             <set>QAbstractItemView::NoEditTriggers</set>
+            </property>
+            <property name="selectionMode">
+             <enum>QAbstractItemView::NoSelection</enum>
+            </property>
+            <column>
+             <property name="text">
+              <string>Mes</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>Ingresos</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>Gastos</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>Saldo</string>
+             </property>
+            </column>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <layout class="QVBoxLayout" name="layoutTotalesCategorias">
+          <item>
+           <widget class="QLabel" name="labelTotalesCategorias">
+            <property name="font">
+             <font>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="text">
+             <string>Por categoría</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QTableWidget" name="tablaCategorias">
+            <property name="editTriggers">
+             <set>QAbstractItemView::NoEditTriggers</set>
+            </property>
+            <property name="selectionMode">
+             <enum>QAbstractItemView::NoSelection</enum>
+            </property>
+            <column>
+             <property name="text">
+              <string>Categoría</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>Total</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>%</string>
+             </property>
+            </column>
+           </widget>
+          </item>
+         </layout>
+        </item>
+        <item>
+         <layout class="QVBoxLayout" name="layoutTotalesAnios">
+          <item>
+           <widget class="QLabel" name="labelTotalesAnios">
+            <property name="font">
+             <font>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="text">
+             <string>Por año</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QTableWidget" name="tablaAnios">
+            <property name="editTriggers">
+             <set>QAbstractItemView::NoEditTriggers</set>
+            </property>
+            <property name="selectionMode">
+             <enum>QAbstractItemView::NoSelection</enum>
+            </property>
+            <column>
+             <property name="text">
+              <string>Año</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>Ingresos</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>Gastos</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>Saldo</string>
+             </property>
+            </column>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
+      </widget>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+  <action name="actionCategorias">
+   <property name="text">
+    <string>Categorías…</string>
+   </property>
+  </action>
+  <action name="actionSaldoInicial">
+   <property name="text">
+    <string>Saldo inicial…</string>
+   </property>
+  </action>
+  <action name="actionImportar">
+   <property name="text">
+    <string>Importar CSV…</string>
+   </property>
+  </action>
+  <action name="actionExportar">
+   <property name="text">
+    <string>Exportar CSV…</string>
+   </property>
+  </action>
+  <action name="actionBackup">
+   <property name="text">
+    <string>Hacer copia de seguridad</string>
+   </property>
+  </action>
+  <action name="actionSincronizar">
+   <property name="text">
+    <string>Sincronizar con el celular…</string>
+   </property>
+  </action>
+  <action name="actionAcerca">
+   <property name="text">
+    <string>Acerca de</string>
+   </property>
+  </action>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>GraficoBarras</class>
+   <extends>QWidget</extends>
+   <header>graficos.h</header>
+   <container>0</container>
+  </customwidget>
+  <customwidget>
+   <class>GraficoTorta</class>
+   <extends>QWidget</extends>
+   <header>graficos.h</header>
+   <container>0</container>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>

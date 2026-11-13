@@ -1,0 +1,45 @@
+# Maintainer: Sebastian
+#
+# Se construye desde el árbol del proyecto (la carpeta de arriba): no hace falta copiar archivos.
+#   cd packaging && makepkg -si
+
+pkgname=ingresos-gastos
+pkgver=2.0.1
+pkgrel=1
+pkgdesc="Ingresos, gastos y saldo en pesos argentinos, con gráficos, CSV y sincronización con la app de Android (Qt6/C++)"
+arch=('x86_64')
+license=('GPL3')
+
+depends=(
+    'qt6-base'      # Widgets, SQL (con el driver de SQLite) y Network (sincronización)
+)
+makedepends=(
+    'cmake'
+    'ninja'
+)
+optdepends=(
+    'qt6-translations: botones estándar (Aceptar, Cancelar, Sí, No...) en español'
+)
+
+source=()
+sha256sums=()
+
+build() {
+    cmake -S "$startdir/.." -B "$srcdir/build" -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DIG_MOVIL=OFF \
+        -DBUILD_TESTING=OFF
+    cmake --build "$srcdir/build"
+}
+
+check() {
+    # Las pruebas necesitan otra compilación (BUILD_TESTING=ON); se saltean con: makepkg -si --nocheck
+    cmake -S "$startdir/.." -B "$srcdir/build-tests" -G Ninja -DCMAKE_BUILD_TYPE=Release -DIG_MOVIL=OFF -DBUILD_TESTING=ON
+    cmake --build "$srcdir/build-tests"
+    QT_QPA_PLATFORM=offscreen ctest --test-dir "$srcdir/build-tests" --output-on-failure
+}
+
+package() {
+    DESTDIR="$pkgdir" cmake --install "$srcdir/build"
+}

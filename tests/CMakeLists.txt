@@ -1,0 +1,23 @@
+find_package(Qt6 REQUIRED COMPONENTS Test)
+
+function(ig_test nombre biblioteca)
+    add_executable(${nombre} ${nombre}.cpp)
+    target_link_libraries(${nombre} PRIVATE ${biblioteca} Qt6::Test)
+    add_test(NAME ${nombre} COMMAND ${nombre})
+    set_tests_properties(${nombre} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endfunction()
+
+# Núcleo (lo comparten la PC y el celular)
+ig_test(tst_dinero igcore)
+ig_test(tst_csv igcore)
+ig_test(tst_db igcore)
+ig_test(tst_sinc igcore)
+
+if(IG_ESCRITORIO)
+    ig_test(tst_graficos igescritorio)
+    ig_test(tst_ventana igescritorio)
+endif()
+if(IG_MOVIL)
+    ig_test(tst_movil igmovil)
+    target_link_libraries(tst_movil PRIVATE igmovilplugin)
+endif()

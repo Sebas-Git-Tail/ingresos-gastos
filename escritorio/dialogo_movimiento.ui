@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DialogoMovimiento</class>
+ <widget class="QDialog" name="DialogoMovimiento">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>440</width>
+    <height>300</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Movimiento</string>
+  </property>
+  <layout class="QVBoxLayout" name="layoutDialogo">
+   <item>
+    <layout class="QFormLayout" name="formulario">
+     <item row="0" column="0">
+      <widget class="QLabel" name="labelTipo">
+       <property name="text">
+        <string>Tipo:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="1">
+      <layout class="QHBoxLayout" name="layoutTipo">
+       <item>
+        <widget class="QRadioButton" name="radioIngreso">
+         <property name="text">
+          <string>Ingreso</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QRadioButton" name="radioGasto">
+         <property name="text">
+          <string>Gasto</string>
+         </property>
+         <property name="checked">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="espaciadorTipo">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>40</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </item>
+     <item row="1" column="0">
+      <widget class="QLabel" name="labelFecha">
+       <property name="text">
+        <string>&amp;Fecha:</string>
+       </property>
+       <property name="buddy">
+        <cstring>inputFecha</cstring>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QDateEdit" name="inputFecha">
+       <property name="displayFormat">
+        <string>dd/MM/yyyy</string>
+       </property>
+       <property name="calendarPopup">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="0">
+      <widget class="QLabel" name="labelCategoria">
+       <property name="text">
+        <string>&amp;Categoría:</string>
+       </property>
+       <property name="buddy">
+        <cstring>comboCategoria</cstring>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="1">
+      <layout class="QHBoxLayout" name="layoutCategoria">
+       <item>
+        <widget class="QComboBox" name="comboCategoria">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+           <horstretch>1</horstretch>
+           <verstretch>0</verstretch>
+          </sizepolicy>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QToolButton" name="btnNuevaCategoria">
+         <property name="toolTip">
+          <string>Crear una categoría nueva</string>
+         </property>
+         <property name="text">
+          <string>+</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </item>
+     <item row="3" column="0">
+      <widget class="QLabel" name="labelMonto">
+       <property name="text">
+        <string>&amp;Monto ($):</string>
+       </property>
+       <property name="buddy">
+        <cstring>inputMonto</cstring>
+       </property>
+      </widget>
+     </item>
+     <item row="3" column="1">
+      <widget class="QLineEdit" name="inputMonto">
+       <property name="placeholderText">
+        <string>Ej.: 15.430,50</string>
+       </property>
+       <property name="alignment">
+        <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+       </property>
+      </widget>
+     </item>
+     <item row="4" column="0">
+      <widget class="QLabel" name="labelDescripcion">
+       <property name="text">
+        <string>&amp;Descripción:</string>
+       </property>
+       <property name="buddy">
+        <cstring>inputDescripcion</cstring>
+       </property>
+      </widget>
+     </item>
+     <item row="4" column="1">
+      <widget class="QLineEdit" name="inputDescripcion">
+       <property name="placeholderText">
+        <string>Opcional</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="labelError">
+     <property name="styleSheet">
+      <string notr="true">color: #c62828;</string>
+     </property>
+     <property name="text">
+      <string/>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <spacer name="espaciadorVertical">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>10</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="botones">
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Save</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>radioIngreso</tabstop>
+  <tabstop>radioGasto</tabstop>
+  <tabstop>inputFecha</tabstop>
+  <tabstop>comboCategoria</tabstop>
+  <tabstop>btnNuevaCategoria</tabstop>
+  <tabstop>inputMonto</tabstop>
+  <tabstop>inputDescripcion</tabstop>
+ </tabstops>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>botones</sender>
+   <signal>rejected()</signal>
+   <receiver>DialogoMovimiento</receiver>
+   <slot>reject()</slot>
+  </connection>
+ </connections>
+</ui>

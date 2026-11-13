@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Ingresos y Gastos
+GenericName=Finanzas personales
+Comment=Ingresos, gastos y saldo de la cuenta, en pesos
+Exec=ingresos-gastos
+Icon=ingresos-gastos
+Terminal=false
+Categories=Office;Finance;Qt;
+Keywords=gastos;ingresos;plata;dinero;presupuesto;finanzas;saldo;
+StartupWMClass=ingresos-gastos
