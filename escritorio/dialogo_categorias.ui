@@ -91,6 +91,16 @@
       </widget>
      </item>
      <item>
+      <widget class="QPushButton" name="btnPresupuesto">
+       <property name="text">
+        <string>&amp;Presupuesto…</string>
+       </property>
+       <property name="toolTip">
+        <string>Cuánto pensás gastar por mes en esta categoría. Si te pasás, la ventana principal avisa.</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QPushButton" name="btnEliminar">
        <property name="text">
         <string>&amp;Eliminar…</string>

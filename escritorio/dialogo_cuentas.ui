@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DialogoCuentas</class>
+ <widget class="QDialog" name="DialogoCuentas">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>560</width><height>360</height></rect></property>
+  <property name="windowTitle"><string>Cuentas</string></property>
+  <layout class="QHBoxLayout" name="layoutDialogo">
+   <item>
+    <layout class="QVBoxLayout" name="layoutLista">
+     <item><widget class="QLabel" name="labelAyuda"><property name="wordWrap"><bool>true</bool></property><property name="text"><string>Dónde está la plata: efectivo, banco, Mercado Pago… Cada movimiento va en una cuenta y arriba se puede mirar una sola o todas juntas.</string></property></widget></item>
+     <item><widget class="QTableWidget" name="tablaCuentas"/></item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QVBoxLayout" name="layoutBotones">
+     <item><widget class="QPushButton" name="btnAgregar"><property name="text"><string>&amp;Agregar…</string></property></widget></item>
+     <item><widget class="QPushButton" name="btnRenombrar"><property name="text"><string>&amp;Renombrar…</string></property></widget></item>
+     <item><widget class="QPushButton" name="btnSaldoInicial"><property name="text"><string>&amp;Saldo inicial…</string></property></widget></item>
+     <item><widget class="QPushButton" name="btnEliminar"><property name="text"><string>&amp;Eliminar…</string></property></widget></item>
+     <item><spacer name="espaciador"><property name="orientation"><enum>Qt::Vertical</enum></property></spacer></item>
+     <item><widget class="QPushButton" name="btnCerrar"><property name="text"><string>Cerrar</string></property></widget></item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections>
+  <connection><sender>btnCerrar</sender><signal>clicked()</signal><receiver>DialogoCuentas</receiver><slot>accept()</slot></connection>
+ </connections>
+</ui>

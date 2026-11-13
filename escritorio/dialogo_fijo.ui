@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DialogoFijo</class>
+ <widget class="QDialog" name="DialogoFijo">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>440</width><height>380</height></rect></property>
+  <property name="windowTitle"><string>Movimiento fijo</string></property>
+  <layout class="QVBoxLayout" name="layoutDialogo">
+   <item>
+    <layout class="QFormLayout" name="formulario">
+     <item row="0" column="0"><widget class="QLabel" name="labelTipo"><property name="text"><string>Tipo:</string></property></widget></item>
+     <item row="0" column="1">
+      <layout class="QHBoxLayout" name="layoutTipo">
+       <item><widget class="QRadioButton" name="radioIngreso"><property name="text"><string>&amp;Ingreso</string></property></widget></item>
+       <item><widget class="QRadioButton" name="radioGasto"><property name="text"><string>&amp;Gasto</string></property><property name="checked"><bool>true</bool></property></widget></item>
+      </layout>
+     </item>
+     <item row="1" column="0"><widget class="QLabel" name="labelCategoria"><property name="text"><string>&amp;Categoría:</string></property><property name="buddy"><cstring>comboCategoria</cstring></property></widget></item>
+     <item row="1" column="1"><widget class="QComboBox" name="comboCategoria"/></item>
+     <item row="2" column="0"><widget class="QLabel" name="labelCuenta"><property name="text"><string>C&amp;uenta:</string></property><property name="buddy"><cstring>comboCuenta</cstring></property></widget></item>
+     <item row="2" column="1"><widget class="QComboBox" name="comboCuenta"/></item>
+     <item row="3" column="0"><widget class="QLabel" name="labelMonto"><property name="text"><string>&amp;Monto:</string></property><property name="buddy"><cstring>inputMonto</cstring></property></widget></item>
+     <item row="3" column="1"><widget class="QLineEdit" name="inputMonto"><property name="placeholderText"><string>15.430,50</string></property></widget></item>
+     <item row="4" column="0"><widget class="QLabel" name="labelDescripcion"><property name="text"><string>&amp;Descripción:</string></property><property name="buddy"><cstring>inputDescripcion</cstring></property></widget></item>
+     <item row="4" column="1"><widget class="QLineEdit" name="inputDescripcion"><property name="placeholderText"><string>Alquiler, sueldo, internet…</string></property></widget></item>
+     <item row="5" column="0"><widget class="QLabel" name="labelDia"><property name="text"><string>Dí&amp;a del mes:</string></property><property name="buddy"><cstring>spinDia</cstring></property></widget></item>
+     <item row="5" column="1"><widget class="QSpinBox" name="spinDia"><property name="minimum"><number>1</number></property><property name="maximum"><number>31</number></property><property name="toolTip"><string>Si el mes es más corto (por ejemplo 31 en febrero), va el último día</string></property></widget></item>
+     <item row="6" column="0"><widget class="QLabel" name="labelDesde"><property name="text"><string>Des&amp;de:</string></property><property name="buddy"><cstring>inputDesde</cstring></property></widget></item>
+     <item row="6" column="1"><widget class="QDateEdit" name="inputDesde"><property name="calendarPopup"><bool>true</bool></property><property name="displayFormat"><string>dd/MM/yyyy</string></property></widget></item>
+     <item row="7" column="0"><widget class="QCheckBox" name="checkHasta"><property name="text"><string>&amp;Hasta:</string></property></widget></item>
+     <item row="7" column="1"><widget class="QDateEdit" name="inputHasta"><property name="calendarPopup"><bool>true</bool></property><property name="displayFormat"><string>dd/MM/yyyy</string></property><property name="enabled"><bool>false</bool></property></widget></item>
+     <item row="8" column="1"><widget class="QCheckBox" name="checkActivo"><property name="text"><string>Ac&amp;tivo (si se destilda, deja de cargarse)</string></property><property name="checked"><bool>true</bool></property></widget></item>
+    </layout>
+   </item>
+   <item><widget class="QLabel" name="labelError"><property name="wordWrap"><bool>true</bool></property><property name="styleSheet"><string notr="true">color: #e34948;</string></property></widget></item>
+   <item><widget class="QDialogButtonBox" name="botones"><property name="standardButtons"><set>QDialogButtonBox::StandardButton::Cancel|QDialogButtonBox::StandardButton::Save</set></property></widget></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections>
+  <connection><sender>botones</sender><signal>rejected()</signal><receiver>DialogoFijo</receiver><slot>reject()</slot></connection>
+  <connection><sender>checkHasta</sender><signal>toggled(bool)</signal><receiver>inputHasta</receiver><slot>setEnabled(bool)</slot></connection>
+ </connections>
+</ui>

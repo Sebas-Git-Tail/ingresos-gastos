@@ -1,6 +1,8 @@
 #include "dialogocategorias.h"
 #include "ui_dialogo_categorias.h"
 #include "graficos.h"
+#include "db.h"
+#include "dinero.h"
 #include <QInputDialog>
 #include <QMenu>
 #include <QMessageBox>
@@ -43,6 +45,7 @@ DialogoCategorias::DialogoCategorias(Cuentas& cuentas, Tipo tipoInicial, QWidget
     connect(ui->btnAgregar, &QPushButton::clicked, this, &DialogoCategorias::pedirAgregar);
     connect(ui->btnRenombrar, &QPushButton::clicked, this, &DialogoCategorias::pedirRenombrar);
     connect(ui->btnEliminar, &QPushButton::clicked, this, &DialogoCategorias::pedirEliminar);
+    connect(ui->btnPresupuesto, &QPushButton::clicked, this, &DialogoCategorias::pedirPresupuesto);
     connect(ui->tabTipos, &QTabWidget::currentChanged, this, &DialogoCategorias::actualizarBotones);
     for (QListWidget* l : {ui->listaGastos, ui->listaIngresos}) {
         connect(l, &QListWidget::currentRowChanged, this, &DialogoCategorias::actualizarBotones);
@@ -88,9 +91,11 @@ void DialogoCategorias::cargar(qint64 elegir)
         const int fila = l->currentRow();
         l->clear();
         for (const Categoria& c : cuentas_.categorias(t)) {
-            const QString cant = c.movimientos == 1 ? tr("1 movimiento") : tr("%1 movimientos").arg(c.movimientos);
+            QString cant = c.movimientos == 1 ? tr("1 movimiento") : tr("%1 movimientos").arg(c.movimientos);
+            if (c.presupuesto > 0) cant += tr(" · presupuesto %1 por mes").arg(formatearPesos(c.presupuesto));
             auto* it = new QListWidgetItem(muestra(tema.serie[std::clamp(c.color, 0, 7)]),
                                            QStringLiteral("%1  (%2)").arg(c.nombre, cant), l);
+            it->setData(Qt::UserRole + 2, c.presupuesto);
             it->setData(Qt::UserRole, c.id);
             it->setData(Qt::UserRole + 1, c.nombre);
         }
@@ -106,6 +111,34 @@ void DialogoCategorias::actualizarBotones()
     ui->btnRenombrar->setEnabled(hay);
     ui->btnColor->setEnabled(hay);
     ui->btnEliminar->setEnabled(hay && listaActual()->count() > 1);   // siempre queda al menos una
+    ui->btnPresupuesto->setEnabled(hay && tipoActual() == Tipo::Gasto);
+}
+
+void DialogoCategorias::pedirPresupuesto()
+{
+    const qint64 id = seleccionada();
+    const QListWidgetItem* it = listaActual()->currentItem();
+    if (!id || !it) return;
+    const Centavos actual = it->data(Qt::UserRole + 2).toLongLong();
+    QString texto = actual > 0 ? formatearPesos(actual).remove(QStringLiteral("$ ")) : QString();
+    while (true) {
+        bool ok = false;
+        texto = QInputDialog::getText(this, tr("Presupuesto"),
+            tr("¿Cuánto pensás gastar por mes en «%1»?\nVacío o 0 = sin presupuesto.").arg(it->data(Qt::UserRole + 1).toString()),
+            QLineEdit::Normal, texto, &ok);
+        if (!ok) return;
+        Centavos c = 0;
+        if (texto.trimmed().isEmpty() || parsearPesos(texto, &c)) {
+            const Resultado r = cuentas_.fijarPresupuesto(id, c);
+            mostrarError(r);
+            if (r.ok) {
+                cambios_ = true;
+                cargar(id);
+            }
+            return;
+        }
+        QMessageBox::warning(this, tr("Presupuesto"), tr("«%1» no es un monto válido. Ejemplo: 150.000").arg(texto));
+    }
 }
 
 void DialogoCategorias::mostrarError(const Resultado& r)

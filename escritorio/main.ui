@@ -98,6 +98,13 @@
        </widget>
       </item>
       <item>
+       <widget class="QComboBox" name="comboCuenta">
+        <property name="toolTip">
+         <string>Qué cuenta mirar (☰ → Cuentas para agregar más)</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <spacer name="espaciadorSuperior">
         <property name="orientation">
          <enum>Qt::Horizontal</enum>
@@ -256,6 +263,16 @@
        </widget>
       </item>
      </layout>
+    </item>
+    <item>
+     <widget class="QLabel" name="labelAvisos">
+      <property name="wordWrap">
+       <bool>true</bool>
+      </property>
+      <property name="textFormat">
+       <enum>Qt::TextFormat::RichText</enum>
+      </property>
+     </widget>
     </item>
     <item>
      <widget class="QTabWidget" name="tabWidget">
@@ -564,6 +581,16 @@
   <action name="actionCategorias">
    <property name="text">
     <string>Categorías…</string>
+   </property>
+  </action>
+  <action name="actionCuentas">
+   <property name="text">
+    <string>C&amp;uentas…</string>
+   </property>
+  </action>
+  <action name="actionFijos">
+   <property name="text">
+    <string>&amp;Movimientos fijos…</string>
    </property>
   </action>
   <action name="actionSaldoInicial">

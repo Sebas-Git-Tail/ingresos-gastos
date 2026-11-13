@@ -37,6 +37,7 @@ private:
     void pedirAgregar();
     void pedirRenombrar();
     void pedirEliminar();
+    void pedirPresupuesto();
 
     std::unique_ptr<Ui::DialogoCategorias> ui;
     Cuentas& cuentas_;

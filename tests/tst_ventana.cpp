@@ -1,6 +1,9 @@
 // Pruebas de las pantallas: ventana principal, diálogo de movimiento y diálogo de categorías.
 #include "db.h"
+#include "dinero.h"
 #include "dialogocategorias.h"
+#include "dialogocuentas.h"
+#include "dialogofijos.h"
 #include "dialogomovimiento.h"
 #include "graficos.h"
 #include "ventanaprincipal.h"
@@ -339,6 +342,72 @@ private slots:
         QCOMPARE(d.tipoActual(), Tipo::Ingreso);
         QVERIFY(d.agregar("Aguinaldo").ok);
         QVERIFY(c.buscarCategoria("Aguinaldo", Tipo::Ingreso).has_value());
+    }
+
+    // ---- 2.1.0: cuentas, presupuestos y movimientos fijos
+    void cuentasEnLaVentana()
+    {
+        Cuentas c(":memory:");
+        VentanaPrincipal w(c);
+        w.show();
+        auto* combo = w.findChild<QComboBox*>("comboCuenta");
+        QVERIFY(combo && combo->isHidden());                        // con una sola cuenta no se muestra
+        {
+            DialogoCuentas d(c);
+            QVERIFY(d.agregar("Banco", "1.000").ok);
+            QVERIFY(!d.agregar("Otra", "mucho").ok);
+            QCOMPARE(d.filas(), 2);
+        }
+        w.refrescar();
+        QVERIFY(!combo->isHidden());
+        QCOMPARE(combo->count(), 3);                                // Todas, Principal, Banco
+        Movimiento m = mov(c, QDate::currentDate(), "Sueldo", Tipo::Ingreso, 50000);
+        m.cuentaId = combo->itemData(2).toLongLong();
+        QVERIFY(c.crearMovimiento(m).ok);
+        QVERIFY(c.crearMovimiento(mov(c, QDate::currentDate(), "Supermercado", Tipo::Gasto, 3000)).ok);
+        combo->setCurrentIndex(2);
+        emit combo->activated(2);
+        QCOMPARE(c.cuentaVista(), combo->itemData(2).toLongLong());
+        QCOMPARE(w.findChild<QLabel*>("labelSaldo")->text(), formatearPesos(100000 + 50000));
+        combo->setCurrentIndex(0);
+        emit combo->activated(0);
+        QCOMPARE(w.findChild<QLabel*>("labelSaldo")->text(), formatearPesos(100000 + 50000 - 3000));
+    }
+
+    void avisoDePresupuesto()
+    {
+        Cuentas c(":memory:");
+        const qint64 super = idCategoria(c, "Supermercado", Tipo::Gasto);
+        QVERIFY(c.fijarPresupuesto(super, 10000).ok);
+        VentanaPrincipal w(c);
+        w.show();
+        auto* aviso = w.findChild<QLabel*>("labelAvisos");
+        QVERIFY(aviso->isHidden());
+        QVERIFY(c.crearMovimiento(mov(c, QDate::currentDate(), "Supermercado", Tipo::Gasto, 12000)).ok);
+        w.refrescar();
+        QVERIFY(!aviso->isHidden());
+        QVERIFY2(aviso->text().contains("Te pasaste"), qPrintable(aviso->text()));
+        QVERIFY(aviso->text().contains("120 %"));
+    }
+
+    void movimientoFijoDesdeElDialogo()
+    {
+        Cuentas c(":memory:");
+        Recurrente r;
+        r.tipo = Tipo::Gasto;
+        r.categoriaId = idCategoria(c, "Internet", Tipo::Gasto);
+        r.dia = 1;
+        const QDate hoy = QDate::currentDate();
+        r.desde = QDate(hoy.year(), hoy.month(), 1).addMonths(-1);  // el 1 del mes pasado
+        DialogoFijo d(c, r);
+        d.setMonto("15.000");
+        d.accept();
+        QCOMPARE(d.result(), int(QDialog::Accepted));
+        QCOMPARE(c.recurrentes().size(), 1);
+        QCOMPARE(c.recurrentes().first().monto, 1500000);
+        QCOMPARE(c.generarRecurrentes(), 2);                        // el mes pasado y este
+        DialogoFijos lista(c);
+        QCOMPARE(lista.filas(), 1);
     }
 };
 

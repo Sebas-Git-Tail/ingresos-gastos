@@ -2,6 +2,8 @@
 #include "ui_main.h"
 #include "csv.h"
 #include "dialogocategorias.h"
+#include "dialogocuentas.h"
+#include "dialogofijos.h"
 #include "dialogomovimiento.h"
 #include "dialogosincronizacion.h"
 #include "sincronizacion.h"
@@ -23,6 +25,7 @@
 #include <QSortFilterProxyModel>
 #include <QStandardItemModel>
 #include <QStandardPaths>
+#include <QTimer>
 
 namespace {
 
@@ -174,6 +177,14 @@ VentanaPrincipal::VentanaPrincipal(Cuentas& cuentas, QWidget* parent)
     connect(ui->graficoBarras, &GraficoBarras::grupoClicado, this, &VentanaPrincipal::clicEnBarras);
 
     connect(ui->actionCategorias, &QAction::triggered, this, &VentanaPrincipal::abrirCategorias);
+    connect(ui->actionCuentas, &QAction::triggered, this, &VentanaPrincipal::abrirCuentas);
+    connect(ui->actionFijos, &QAction::triggered, this, &VentanaPrincipal::abrirFijos);
+    connect(ui->comboCuenta, qOverload<int>(&QComboBox::activated), this, [this](int i) {
+        cuentas_.verCuenta(ui->comboCuenta->itemData(i).toLongLong());
+        QSettings().setValue(QStringLiteral("ventana/cuenta"), cuentas_.cuentaVista());
+        refrescar();
+    });
+    connect(ui->labelAvisos, &QLabel::linkActivated, this, [this] { abrirCategorias(); });
     connect(ui->actionSaldoInicial, &QAction::triggered, this, &VentanaPrincipal::pedirSaldoInicial);
     connect(ui->actionImportar, &QAction::triggered, this, &VentanaPrincipal::pedirImportar);
     connect(ui->actionExportar, &QAction::triggered, this, &VentanaPrincipal::pedirExportar);
@@ -202,7 +213,22 @@ VentanaPrincipal::VentanaPrincipal(Cuentas& cuentas, QWidget* parent)
     armarMenu();
     armarAtajos();
     leerConfiguracion();
+    // La cuenta que se estaba mirando (si todavía existe)
+    const qint64 cuenta = QSettings().value(QStringLiteral("ventana/cuenta"), 0).toLongLong();
+    for (const CuentaDinero& c : cuentas_.cuentasDinero()) if (c.id == cuenta) cuentas_.verCuenta(cuenta);
+    // Movimientos fijos: al abrir y cada hora (por si queda abierto de un día para otro)
+    cargarFijos();
+    auto* reloj = new QTimer(this);
+    connect(reloj, &QTimer::timeout, this, [this] { if (cargarFijos() > 0) refrescar(); });
+    reloj->start(60 * 60 * 1000);
     refrescar();
+}
+
+int VentanaPrincipal::cargarFijos()
+{
+    const int n = cuentas_.generarRecurrentes();
+    if (n > 0) statusBar()->showMessage(tr("Se cargaron %n movimiento(s) fijo(s)", nullptr, n), 10000);
+    return n;
 }
 
 VentanaPrincipal::~VentanaPrincipal() = default;
@@ -213,6 +239,8 @@ void VentanaPrincipal::armarMenu()
 {
     auto* menu = new QMenu(this);
     menu->addAction(ui->actionCategorias);
+    menu->addAction(ui->actionCuentas);
+    menu->addAction(ui->actionFijos);
     menu->addAction(ui->actionSaldoInicial);
     menu->addSeparator();
     menu->addAction(ui->actionImportar);
@@ -320,10 +348,45 @@ void VentanaPrincipal::refrescar()
     ui->btnAnterior->setToolTip(vista_ == Vista::Anio ? tr("Año anterior (Alt+←)") : tr("Mes anterior (Alt+←)"));
     ui->btnSiguiente->setToolTip(vista_ == Vista::Anio ? tr("Año siguiente (Alt+→)") : tr("Mes siguiente (Alt+→)"));
 
+    cargarCuentas();
     cargarMovimientos();
     cargarTarjetas();
     cargarGraficos();
     cargarTotales();
+    cargarAvisos();
+}
+
+void VentanaPrincipal::cargarCuentas()
+{
+    const QList<CuentaDinero> lista = cuentas_.cuentasDinero();
+    const QSignalBlocker b(ui->comboCuenta);
+    ui->comboCuenta->clear();
+    ui->comboCuenta->addItem(tr("Todas las cuentas"), 0);
+    for (const CuentaDinero& c : lista) ui->comboCuenta->addItem(c.nombre, c.id);
+    ui->comboCuenta->setCurrentIndex(qMax(0, ui->comboCuenta->findData(cuentas_.cuentaVista())));
+    ui->comboCuenta->setVisible(lista.size() > 1);      // con una sola cuenta no hace falta elegir
+}
+
+void VentanaPrincipal::cargarAvisos()
+{
+    // El mes que se mira (en las vistas Año y Todo, el mes de hoy)
+    const QDate mes = vista_ == Vista::Mes ? periodo_ : QDate::currentDate();
+    QStringList pasados, cerca;
+    for (const EstadoPresupuesto& p : cuentas_.presupuestos(mes.year(), mes.month())) {
+        const QString texto = tr("%1: %2 % (%3 de %4)").arg(p.nombre.toHtmlEscaped()).arg(p.porcentaje())
+                                  .arg(formatearPesos(p.gastado), formatearPesos(p.presupuesto));
+        if (p.gastado > p.presupuesto) pasados << texto;
+        else if (p.porcentaje() >= 80) cerca << texto;
+    }
+    if (pasados.isEmpty() && cerca.isEmpty()) {
+        ui->labelAvisos->hide();
+        return;
+    }
+    QString html;
+    if (!pasados.isEmpty()) html += tr("⚠ Te pasaste del presupuesto en %1: %2").arg(nombreMes(mes.month()).toLower(), pasados.join(QStringLiteral(" · ")));
+    if (!cerca.isEmpty()) html += (html.isEmpty() ? QString() : QStringLiteral("<br>")) + tr("Cerca del presupuesto: %1").arg(cerca.join(QStringLiteral(" · ")));
+    ui->labelAvisos->setText(html + QStringLiteral(" — <a href=\"categorias\">Presupuestos</a>"));
+    ui->labelAvisos->show();
 }
 
 void VentanaPrincipal::cargarMovimientos()
@@ -383,7 +446,10 @@ void VentanaPrincipal::cargarTarjetas()
 
     const QDate hoy = QDate::currentDate();
     ui->labelSaldo->setText(formatearPesos(cuentas_.saldo(hoy)));
-    ui->labelSaldoTitulo->setText(tr("Saldo de la cuenta al %1").arg(hoy.toString(QStringLiteral("dd/MM/yyyy"))));
+    QString cuenta = tr("la cuenta");
+    if (cuentas_.cuentasDinero().size() > 1)
+        cuenta = cuentas_.cuentaVista() ? QStringLiteral("«%1»").arg(ui->comboCuenta->currentText()) : tr("todas las cuentas");
+    ui->labelSaldoTitulo->setText(tr("Saldo de %1 al %2").arg(cuenta, hoy.toString(QStringLiteral("dd/MM/yyyy"))));
     QString ayuda = tr("Saldo inicial %1 + todos los ingresos − todos los gastos hasta hoy.")
                         .arg(formatearPesos(cuentas_.saldoInicial()));
     const QDate ultima = cuentas_.ultimaFecha();
@@ -655,11 +721,48 @@ void VentanaPrincipal::menuContextual(const QPoint& pos)
     menu.addSeparator();
     menu.addAction(tr("Editar…"), this, &VentanaPrincipal::editarSeleccionado)->setEnabled(n == 1);
     menu.addAction(tr("Repetir con fecha de hoy…"), this, &VentanaPrincipal::repetirSeleccionado)->setEnabled(n == 1);
+    menu.addAction(tr("Repetir todos los meses…"), this, &VentanaPrincipal::repetirTodosLosMeses)->setEnabled(n == 1);
     menu.addAction(tr("Eliminar"), this, &VentanaPrincipal::eliminarSeleccionados)->setEnabled(n > 0);
     menu.exec(ui->tablaMovimientos->viewport()->mapToGlobal(pos));
 }
 
 // ---------------------------------------------------------------- menú ☰
+
+void VentanaPrincipal::abrirCuentas()
+{
+    DialogoCuentas d(cuentas_, this);
+    d.exec();
+    if (d.huboCambios()) refrescar();
+}
+
+void VentanaPrincipal::abrirFijos()
+{
+    DialogoFijos d(cuentas_, this);
+    d.exec();
+    if (d.huboCambios()) refrescar();
+}
+
+// Un movimiento fijo con los datos del elegido, desde el mes que viene (este ya está cargado)
+void VentanaPrincipal::repetirTodosLosMeses()
+{
+    const QList<qint64> ids = idsSeleccionados();
+    if (ids.size() != 1) return;
+    const auto m = cuentas_.movimiento(ids.first());
+    if (!m) return;
+    Recurrente r;
+    r.tipo = m->tipo;
+    r.categoriaId = m->categoriaId;
+    r.cuentaId = m->cuentaId;
+    r.monto = m->monto;
+    r.descripcion = m->descripcion;
+    r.dia = m->fecha.day();
+    r.desde = m->fecha.addMonths(1);
+    DialogoFijo d(cuentas_, r, this);
+    if (d.exec() != QDialog::Accepted) return;
+    const int n = cargarFijos();
+    refrescar();
+    if (n == 0) statusBar()->showMessage(tr("Listo: se va a cargar solo todos los meses, el día %1").arg(d.recurrente().dia), 8000);
+}
 
 void VentanaPrincipal::abrirCategorias()
 {

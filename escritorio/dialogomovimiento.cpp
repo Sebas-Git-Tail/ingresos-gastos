@@ -23,6 +23,14 @@ DialogoMovimiento::DialogoMovimiento(Cuentas& cuentas, const Movimiento& m, QWid
     }
     cargarCategorias(m.categoriaId);
 
+    // Cuenta: la del movimiento, o la que se está mirando, o la principal. Con una sola cuenta no se muestra.
+    const QList<CuentaDinero> cuentasDinero = cuentas_.cuentasDinero();
+    for (const CuentaDinero& c : cuentasDinero) ui->comboCuenta->addItem(c.nombre, c.id);
+    const qint64 cuenta = m.cuentaId ? m.cuentaId : (cuentas_.cuentaVista() ? cuentas_.cuentaVista() : cuentas_.cuentaPrincipal());
+    ui->comboCuenta->setCurrentIndex(qMax(0, ui->comboCuenta->findData(cuenta)));
+    ui->labelCuenta->setVisible(cuentasDinero.size() > 1);
+    ui->comboCuenta->setVisible(cuentasDinero.size() > 1);
+
     // Al cambiar de tipo cambian las categorías (las de ingresos no sirven para un gasto)
     connect(ui->radioIngreso, &QRadioButton::toggled, this, [this] { cargarCategorias(); });
     connect(ui->btnNuevaCategoria, &QToolButton::clicked, this, &DialogoMovimiento::nuevaCategoria);
@@ -87,6 +95,8 @@ void DialogoMovimiento::accept()
     m.categoria = ui->comboCategoria->currentText();
     m.monto = monto;
     m.descripcion = ui->inputDescripcion->text().trimmed();
+    m.cuentaId = ui->comboCuenta->currentData().toLongLong();
+    m.cuenta = ui->comboCuenta->currentText();
 
     const Resultado r = m.id ? cuentas_.actualizarMovimiento(m) : cuentas_.crearMovimiento(m);
     if (!r.ok) {

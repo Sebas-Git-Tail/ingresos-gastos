@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DialogoFijos</class>
+ <widget class="QDialog" name="DialogoFijos">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>720</width><height>380</height></rect></property>
+  <property name="windowTitle"><string>Movimientos fijos</string></property>
+  <layout class="QHBoxLayout" name="layoutDialogo">
+   <item>
+    <layout class="QVBoxLayout" name="layoutLista">
+     <item><widget class="QLabel" name="labelAyuda"><property name="wordWrap"><bool>true</bool></property><property name="text"><string>Se cargan solos todos los meses el día indicado (al abrir el programa). Si borrás uno de los que se cargaron, no vuelve.</string></property></widget></item>
+     <item><widget class="QTableWidget" name="tablaFijos"/></item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QVBoxLayout" name="layoutBotones">
+     <item><widget class="QPushButton" name="btnAgregar"><property name="text"><string>&amp;Agregar…</string></property></widget></item>
+     <item><widget class="QPushButton" name="btnEditar"><property name="text"><string>&amp;Editar…</string></property></widget></item>
+     <item><widget class="QPushButton" name="btnEliminar"><property name="text"><string>E&amp;liminar…</string></property></widget></item>
+     <item><spacer name="espaciador"><property name="orientation"><enum>Qt::Vertical</enum></property></spacer></item>
+     <item><widget class="QPushButton" name="btnCerrar"><property name="text"><string>Cerrar</string></property></widget></item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections>
+  <connection><sender>btnCerrar</sender><signal>clicked()</signal><receiver>DialogoFijos</receiver><slot>accept()</slot></connection>
+ </connections>
+</ui>

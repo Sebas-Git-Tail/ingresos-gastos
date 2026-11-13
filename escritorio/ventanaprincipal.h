@@ -48,6 +48,10 @@ public slots:
     void repetirSeleccionado();
     void eliminarSeleccionados();
     void abrirCategorias();
+    void abrirCuentas();
+    void abrirFijos();
+    void repetirTodosLosMeses();         // crea un movimiento fijo a partir del elegido
+    int cargarFijos();                   // carga los movimientos fijos que correspondan hasta hoy
     void pedirSaldoInicial();
     void pedirImportar();
     void pedirExportar();
@@ -67,6 +71,8 @@ private:
     void cargarTarjetas();
     void cargarGraficos();
     void cargarTotales();
+    void cargarCuentas();                // el selector de cuenta de arriba
+    void cargarAvisos();                 // presupuestos pasados o por pasarse en el mes que se mira
     void actualizarBotones();
     void menuContextual(const QPoint& pos);
     void clicEnBarras(int indice);
