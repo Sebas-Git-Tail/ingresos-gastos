@@ -91,9 +91,10 @@ o a mano con el botón ⟳ de arriba. En la PC tiene que estar abierto Ingresos 
 - **Si se cambia el mismo dato en los dos lados** antes de sincronizar, queda el cambio más nuevo.
   Lo borrado en un lado se borra en el otro. Si en un lado se borra una categoría mientras en el otro se cargaba
   un gasto en ella, la categoría vuelve (el gasto no se pierde).
-- **Seguridad**: solo sincronizan los dispositivos emparejados (el código se usa una vez y vence a los 5 minutos;
-  de ahí sale una clave que guardan los dos y que nunca viaja por la red). Los datos van **sin cifrar**: en la red
-  de la casa alcanza; por Internet, Tailscale ya los cifra. No conviene abrir el puerto en el router.
+- **Seguridad**: solo sincronizan los dispositivos emparejados. El código se usa una vez, vence a los 5 minutos y no
+  viaja por la red: con él se hace un intercambio de claves (CPace), así que escuchando el Wi-Fi no se puede
+  averiguar, y quien quiera adivinarlo tiene 5 intentos. De ahí sale una clave que guardan los dos y nunca viaja.
+  Todo lo que se sincroniza va **cifrado** (XChaCha20-Poly1305). Igual no conviene abrir el puerto en el router.
 - **Firewall**: Arch no trae uno activado. Si usás `ufw`: `sudo ufw allow 45454/tcp` y `sudo ufw allow 45455/udp`
   (el segundo es para que el celular encuentre la PC solo).
 - Un celular emparejado se puede quitar en la PC (misma ventana). En el celular: *Olvidar esta PC*.
@@ -110,6 +111,9 @@ o a mano con el botón ⟳ de arriba. En la PC tiene que estar abierto Ingresos 
 | Gráfico de barras | Ingresos y gastos de cada mes del año (o de cada año, en la vista *Todo*). PC: al pasar el mouse muestra los números y un clic abre el mes. Celular: tocar un mes muestra sus números y *Ver mes* |
 | Gráficos de torta | Gastos e ingresos por categoría, con leyenda: nombre, monto y %. Siempre las 7 más grandes; el resto en «Otros» |
 | Exportar / importar CSV | ☰ → **Exportar CSV** (el período que se ve) e **Importar CSV**. Antes de guardar muestra cuántos se agregan, cuántos ya estaban (**no duplica**) y qué categorías nuevas se crean. En el celular se elige el archivo con el selector de Android |
+| Varias cuentas | ☰ → **Cuentas** (celular: Opciones → Cuentas): efectivo, banco, Mercado Pago… cada una con su saldo inicial. Cada movimiento va en una cuenta; con más de una, arriba se elige cuál mirar (o **Todas**): movimientos, tarjetas, gráficos, totales y saldo se ven de esa cuenta. La que ya estaba se llama **Principal** (se puede renombrar, no eliminar) y se queda con el saldo inicial de antes |
+| Presupuestos | ☰ → **Categorías** → **Presupuesto…** (celular: tocar la categoría → Presupuesto por mes): cuánto pensás gastar por mes. Arriba aparece «⚠ Te pasaste del presupuesto…» (y en la PC también «Cerca del presupuesto» desde el 80 %) |
+| Movimientos fijos | ☰ → **Movimientos fijos** (sueldo, alquiler, internet…): se cargan **solos** el día elegido de cada mes, al abrir el programa. También desde un movimiento: clic derecho (celular: mantener apretado) → **Repetir todos los meses…**. Si se borra uno de los que se cargaron, no vuelve; si la PC y el celular lo cargan los dos, al sincronizar queda uno solo |
 | Copia de seguridad | ☰ → **Copia de seguridad**: guarda la base completa donde quieras |
 
 Arriba se elige el período: **Mes**, **Año** o **Todo** (PC: ◀ ▶, Alt+← / Alt+→ y **Hoy**; celular: ‹ › y
@@ -129,15 +133,20 @@ directo (☰ → Importar CSV); en la PC, después de pasarlo a la compu. Se rec
 
 ### Formato del CSV
 ```
-Fecha;Tipo;Categoría;Monto;Descripción
-01/11/2026;Gasto;Supermercado;15430,50;Compra semanal
-01/11/2026;Ingreso;Sueldo;800000,00;
+Fecha;Tipo;Categoría;Monto;Descripción;Cuenta
+01/11/2026;Gasto;Supermercado;15430,50;Compra semanal;Principal
+01/11/2026;Ingreso;Sueldo;800000,00;;Banco
 ```
 Al importar también acepta `,` o tabulación como separador, columnas en otro orden y con otros nombres
 (`Importe`, `Detalle`, `Concepto`, `Rubro`, `Date`, `Amount`…), fechas `2026-11-01` o `1/11/26`, y archivos
 guardados por Excel en Windows. Si no hay columna *Tipo*, un monto negativo se toma como gasto.
 
 ## Versiones
+**2.1.0** — Varias cuentas, presupuestos por categoría y movimientos fijos (ver la tabla de arriba). La sincronización
+ahora va **cifrada** y el emparejamiento no deja adivinar el código escuchando la red: **hay que emparejar de nuevo
+una vez** el celular con la PC (Olvidar esta PC y emparejar con un código nuevo) y actualizar **los dos**. El CSV
+tiene una columna más, **Cuenta** (al importar crea las que falten). La base se actualiza sola.
+
 **2.0.1** — Las categorías se muestran siempre por orden alfabético (en la PC y en el celular): una categoría
 nueva o renombrada queda en su lugar. Al cargar un movimiento nuevo sigue arrancando elegida la primera que
 se creó, no la primera de la lista.
@@ -156,12 +165,14 @@ muestran las 7 categorías más grandes.
 |---|---|
 | `nucleo/` | Lo que comparten la PC y el celular |
 | `nucleo/db.cpp` | SQLite: categorías, movimientos, saldo, totales, importación, migración y lo que se intercambia al sincronizar |
-| `nucleo/sincronizacion.cpp` | Emparejar, sincronizar (PC = servidor, celular = cliente) y buscar la PC en la red |
+| `nucleo/sincronizacion.h` | Puertos y nombre para la sincronización; el protocolo (cifrado) está en `comun/sinc` |
+| `comun/` | Código compartido con otros programas ([comun-qt](https://github.com/Sebas-Git-Tail/comun-qt), traído con `git subtree`): **no editar acá**, sino en comun-qt |
 | `nucleo/dibujo.cpp` | El dibujo de los gráficos de barras y de torta |
 | `nucleo/csv.cpp`, `dinero.cpp` | CSV (y ExpenLess); formato de pesos, montos y fechas |
 | `escritorio/*.ui` | Las pantallas de la PC: **se editan en Qt Designer** y se convierten en código al compilar |
 | `escritorio/ventanaprincipal.cpp` | Ventana principal de la PC |
 | `escritorio/dialogosincronizacion.cpp` | Ventana *Sincronizar con el celular* |
+| `escritorio/dialogocuentas.cpp`, `dialogofijos.cpp` | Ventanas *Cuentas* y *Movimientos fijos* |
 | `movil/qml/*.qml` | Las pantallas del celular (se pueden editar con el editor visual de Qt Creator) |
 | `movil/controlador.cpp` | Lo que usan las pantallas del celular (en QML se llama `App`) |
 | `movil/graficosquick.cpp` | Los gráficos para Qt Quick (mismo dibujo que en la PC) |

@@ -4,7 +4,7 @@
 #   cd packaging && makepkg -si
 
 pkgname=ingresos-gastos
-pkgver=2.0.1
+pkgver=2.1.0
 pkgrel=1
 pkgdesc="Ingresos, gastos y saldo en pesos argentinos, con gráficos, CSV y sincronización con la app de Android (Qt6/C++)"
 arch=('x86_64')
