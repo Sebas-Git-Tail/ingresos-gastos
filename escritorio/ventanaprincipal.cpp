@@ -93,13 +93,15 @@ public:
 
     void setTexto(const QString& t)
     {
+        beginFilterChange();
         palabras_ = normalizar(t).split(QLatin1Char(' '), Qt::SkipEmptyParts);
-        invalidateFilter();
+        endFilterChange(QSortFilterProxyModel::Direction::Rows);
     }
     void setTipo(int t)                      // 0 = todos, 1 = ingresos, 2 = gastos
     {
+        beginFilterChange();
         tipo_ = t;
-        invalidateFilter();
+        endFilterChange(QSortFilterProxyModel::Direction::Rows);
     }
 
 protected:

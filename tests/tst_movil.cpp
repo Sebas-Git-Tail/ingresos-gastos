@@ -171,7 +171,7 @@ private slots:
         const QString salida = dir_.filePath("out.csv");
         QCOMPARE(c.exportar(QUrl::fromLocalFile(salida)), QString());
         Cuentas otra(":memory:");
-        QCOMPARE(otra.importar(leerCsv(decodificarArchivo([&] { QFile f(salida); f.open(QIODevice::ReadOnly); return f.readAll(); }())).filas).nuevos, 2);
+        QCOMPARE(otra.importar(leerCsv(decodificarArchivo([&] { QFile f(salida); return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray(); }())).filas).nuevos, 2);
 
         const QString copia = dir_.filePath("copia.db");
         QCOMPARE(c.backup(QUrl::fromLocalFile(copia)), QString());
