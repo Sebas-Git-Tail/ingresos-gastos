@@ -12,6 +12,7 @@
 #include <QSqlQuery>
 #include <QStandardPaths>
 #include <QSysInfo>
+#include <QTimeZone>
 #include <QUuid>
 #include <algorithm>
 #include <atomic>
@@ -35,7 +36,8 @@ const char* const ESQUEMA[] = {
     " uuid TEXT NOT NULL UNIQUE,"
     " nombre TEXT NOT NULL,"
     " tipo TEXT NOT NULL CHECK (tipo IN ('ingreso', 'gasto')),"
-    " color INTEGER NOT NULL DEFAULT 0," COLUMNAS_SINC ","
+    " color INTEGER NOT NULL DEFAULT 0,"
+    " presupuesto INTEGER NOT NULL DEFAULT 0," COLUMNAS_SINC ","
     " borrado INTEGER NOT NULL DEFAULT 0)",
 
     // Nombre único entre las categorías que no están borradas
@@ -49,12 +51,39 @@ const char* const ESQUEMA[] = {
     " fecha TEXT NOT NULL,"
     " categoria_id INTEGER NOT NULL REFERENCES categorias(id),"
     " monto INTEGER NOT NULL CHECK (monto > 0),"
-    " descripcion TEXT NOT NULL DEFAULT ''," COLUMNAS_SINC ","
+    " descripcion TEXT NOT NULL DEFAULT '',"
+    " cuenta_id INTEGER NOT NULL DEFAULT 0," COLUMNAS_SINC ","
     " borrado INTEGER NOT NULL DEFAULT 0)",
 
     "CREATE INDEX IF NOT EXISTS idx_movimientos_fecha ON movimientos(fecha)",
     "CREATE INDEX IF NOT EXISTS idx_movimientos_categoria ON movimientos(categoria_id)",
     "CREATE INDEX IF NOT EXISTS idx_movimientos_cambio ON movimientos(cambio)",
+
+    // Cuentas de dinero (efectivo, banco...). La principal tiene el mismo uuid en todos los dispositivos.
+    "CREATE TABLE IF NOT EXISTS cuentas_dinero ("
+    " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    " uuid TEXT NOT NULL UNIQUE,"
+    " nombre TEXT NOT NULL,"
+    " saldo_inicial INTEGER NOT NULL DEFAULT 0," COLUMNAS_SINC ","
+    " borrado INTEGER NOT NULL DEFAULT 0)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_cuentas_nombre ON cuentas_dinero(nombre COLLATE NOCASE) WHERE borrado = 0",
+    "CREATE INDEX IF NOT EXISTS idx_cuentas_cambio ON cuentas_dinero(cambio)",
+    "CREATE INDEX IF NOT EXISTS idx_movimientos_cuenta ON movimientos(cuenta_id)",
+
+    // Movimientos fijos: se cargan solos todos los meses (ver generarRecurrentes)
+    "CREATE TABLE IF NOT EXISTS recurrentes ("
+    " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+    " uuid TEXT NOT NULL UNIQUE,"
+    " categoria_id INTEGER NOT NULL,"
+    " cuenta_id INTEGER NOT NULL DEFAULT 0,"
+    " monto INTEGER NOT NULL CHECK (monto > 0),"
+    " descripcion TEXT NOT NULL DEFAULT '',"
+    " dia INTEGER NOT NULL CHECK (dia BETWEEN 1 AND 31),"
+    " desde TEXT NOT NULL,"
+    " hasta TEXT NOT NULL DEFAULT '',"
+    " activo INTEGER NOT NULL DEFAULT 1," COLUMNAS_SINC ","
+    " borrado INTEGER NOT NULL DEFAULT 0)",
+    "CREATE INDEX IF NOT EXISTS idx_recurrentes_cambio ON recurrentes(cambio)",
 
     // Dispositivos emparejados
     "CREATE TABLE IF NOT EXISTS pares ("
@@ -68,8 +97,12 @@ const char* const ESQUEMA[] = {
     " ultima_sinc TEXT NOT NULL DEFAULT '')",
 };
 
-// Claves de config que se sincronizan (las demás son de este dispositivo: su id, su nombre, la secuencia)
-const QStringList CONFIG_SINCRONIZADA = {QStringLiteral("saldo_inicial")};
+// Claves de config que se sincronizan (las demás son de este dispositivo: su id, su nombre, la secuencia).
+// Desde la 2.1.0 ninguna: el saldo inicial pasó a cada cuenta de dinero.
+const QStringList CONFIG_SINCRONIZADA = {};
+
+// La cuenta que trae el programa: mismo uuid en todos los dispositivos, así no se duplica al sincronizar
+const QString UUID_PRINCIPAL = QStringLiteral("cuenta-principal");
 
 // Categorías con las que arranca una base nueva (se pueden editar y agregar más)
 const char* const GASTOS_INICIALES[] = {"Supermercado", "Transporte", "Vestimenta", "Internet", "Teléfono",
@@ -126,8 +159,9 @@ QString hash32(const QString& s)
 }
 
 const char* const SELECT_MOVIMIENTO =
-    "SELECT m.id, m.fecha, m.categoria_id, c.nombre, c.tipo, c.color, m.monto, m.descripcion "
-    "FROM movimientos m JOIN categorias c ON c.id = m.categoria_id WHERE m.borrado = 0 ";
+    "SELECT m.id, m.fecha, m.categoria_id, c.nombre, c.tipo, c.color, m.monto, m.descripcion, m.cuenta_id, COALESCE(cu.nombre, '') "
+    "FROM movimientos m JOIN categorias c ON c.id = m.categoria_id LEFT JOIN cuentas_dinero cu ON cu.id = m.cuenta_id "
+    "WHERE m.borrado = 0 ";
 
 Movimiento leerMovimiento(const QSqlQuery& q)
 {
@@ -140,6 +174,8 @@ Movimiento leerMovimiento(const QSqlQuery& q)
     m.color = q.value(5).toInt();
     m.monto = q.value(6).toLongLong();
     m.descripcion = q.value(7).toString();
+    m.cuentaId = q.value(8).toLongLong();
+    m.cuenta = q.value(9).toString();
     return m;
 }
 
@@ -226,6 +262,7 @@ Cuentas::Cuentas(const QString& ruta)
         if (version > VERSION_ESQUEMA)
             throw ErrorBD("La base es de una versión más nueva del programa. Actualizá Ingresos y Gastos.");
         if (hayTablas && version < 2) migrarDesdeV1();          // base de la versión 1.0.x
+        else if (hayTablas && version == 2) migrarDesdeV2();    // base de la 2.0.x
         else crearEsquema();
         consulta(db_, "PRAGMA foreign_keys = ON");
 
@@ -235,6 +272,7 @@ Cuentas::Cuentas(const QString& ruta)
             fijarConfigLocal(QStringLiteral("dispositivo"), dispositivo_);
         }
         if (valor(db_, "SELECT COUNT(*) FROM categorias").toInt() == 0) crearCategoriasIniciales();
+        asegurarCuentaPrincipal();
         abierta_ = true;
     } catch (const std::exception& e) {
         errorApertura_ = QString::fromUtf8(e.what());
@@ -295,6 +333,43 @@ void Cuentas::migrarDesdeV1()
     consulta(db_, "INSERT OR REPLACE INTO config (clave, valor) VALUES ('dispositivo', ?)", {dispositivo_});
     consulta(db_, "INSERT OR REPLACE INTO config (clave, valor) VALUES ('secuencia', ?)", {QString::number(cambio)});
     consulta(db_, QStringLiteral("PRAGMA user_version = %1").arg(VERSION_ESQUEMA));
+    t.confirmar();
+}
+
+// 2.0.x -> 2.1.0: presupuesto en las categorías, cuenta en los movimientos y las tablas nuevas
+void Cuentas::migrarDesdeV2()
+{
+    Transaccion t(db_);
+    consulta(db_, "ALTER TABLE categorias ADD COLUMN presupuesto INTEGER NOT NULL DEFAULT 0");
+    consulta(db_, "ALTER TABLE movimientos ADD COLUMN cuenta_id INTEGER NOT NULL DEFAULT 0");
+    for (const char* sql : ESQUEMA) consulta(db_, QString::fromLatin1(sql));     // las tablas e índices que falten
+    consulta(db_, QStringLiteral("PRAGMA user_version = %1").arg(VERSION_ESQUEMA));
+    t.confirmar();
+}
+
+// La cuenta principal: si no está, se crea con el saldo inicial de antes (que era uno solo) y los
+// movimientos sin cuenta pasan a ella. Mismo uuid en todos los dispositivos y la misma fecha de cambio
+// que tenía el saldo inicial (que ya estaba sincronizado): así la PC y el celular la crean igual.
+void Cuentas::asegurarCuentaPrincipal()
+{
+    Transaccion t(db_);
+    if (!valor(db_, "SELECT id FROM cuentas_dinero WHERE uuid = ?", {UUID_PRINCIPAL}).isValid()) {
+        qint64 mod = 1;
+        QString autor, saldo = QStringLiteral("0");
+        QSqlQuery q = consulta(db_, "SELECT valor, modificado, autor FROM config WHERE clave = 'saldo_inicial'");
+        if (q.next()) {
+            saldo = q.value(0).toString();
+            mod = qMax<qint64>(1, q.value(1).toLongLong());
+            autor = q.value(2).toString();
+        }
+        consulta(db_, "INSERT INTO cuentas_dinero (uuid, nombre, saldo_inicial, modificado, autor, cambio) VALUES (?, ?, ?, ?, ?, ?)",
+                 {UUID_PRINCIPAL, nombreLibreCuenta(QStringLiteral("Principal"), 0), saldo.toLongLong(), mod, texto(autor), siguienteCambio()});
+    }
+    // Movimientos y fijos sin cuenta (de antes, o que llegaron sin ella): a la principal. No es un cambio
+    // que haya que sincronizar: en todos lados «sin cuenta» quiere decir la principal.
+    const qint64 principal = cuentaPrincipal();
+    consulta(db_, "UPDATE movimientos SET cuenta_id = ? WHERE cuenta_id = 0", {principal});
+    consulta(db_, "UPDATE recurrentes SET cuenta_id = ? WHERE cuenta_id = 0", {principal});
     t.confirmar();
 }
 
@@ -383,7 +458,7 @@ QList<Categoria> Cuentas::categorias(std::optional<Tipo> tipo) const
     try {
         QString sql = QStringLiteral(
             "SELECT c.id, c.nombre, c.tipo, c.color, "
-            "(SELECT COUNT(*) FROM movimientos m WHERE m.categoria_id = c.id AND m.borrado = 0) "
+            "(SELECT COUNT(*) FROM movimientos m WHERE m.categoria_id = c.id AND m.borrado = 0), c.presupuesto "
             "FROM categorias c WHERE c.borrado = 0 ");
         QVariantList params;
         if (tipo) {
@@ -392,7 +467,8 @@ QList<Categoria> Cuentas::categorias(std::optional<Tipo> tipo) const
         }
         QSqlQuery q = consulta(db_, sql, params);
         while (q.next())
-            lista << Categoria{q.value(0).toLongLong(), q.value(1).toString(), tipoBD(q.value(2).toString()), q.value(3).toInt(), q.value(4).toInt()};
+            lista << Categoria{q.value(0).toLongLong(), q.value(1).toString(), tipoBD(q.value(2).toString()), q.value(3).toInt(),
+                               q.value(4).toInt(), q.value(5).toLongLong()};
     } catch (const std::exception&) {
     }
     ordenarCategorias(lista);       // así una categoría nueva (o renombrada) queda en su lugar sin hacer nada más
@@ -542,6 +618,7 @@ QList<Movimiento> Cuentas::movimientos(const QDate& desde, const QDate& hasta) c
         QVariantList params;
         if (desde.isValid()) { sql += QStringLiteral("AND m.fecha >= ? "); params << fechaBD(desde); }
         if (hasta.isValid()) { sql += QStringLiteral("AND m.fecha <= ? "); params << fechaBD(hasta); }
+        filtrarCuenta(sql, params);
         sql += QStringLiteral("ORDER BY m.fecha DESC, m.id DESC");
         QSqlQuery q = consulta(db_, sql, params);
         while (q.next()) lista << leerMovimiento(q);
@@ -574,8 +651,11 @@ Resultado Cuentas::crearMovimiento(const Movimiento& m)
     if (!categoria(m.categoriaId)) return {false, QStringLiteral("La categoría ya no existe."), 0};
     try {
         Transaccion t(db_);
-        QSqlQuery q = consulta(db_, "INSERT INTO movimientos (uuid, fecha, categoria_id, monto, descripcion) VALUES (?, ?, ?, ?, ?)",
-                               {uuidNuevo(), fechaBD(m.fecha), m.categoriaId, m.monto, texto(m.descripcion.trimmed())});
+        const qint64 cuenta = m.cuentaId > 0 ? m.cuentaId : cuentaPrincipal();
+        if (!valor(db_, "SELECT id FROM cuentas_dinero WHERE id = ? AND borrado = 0", {cuenta}).isValid())
+            return {false, QStringLiteral("La cuenta ya no existe."), 0};
+        QSqlQuery q = consulta(db_, "INSERT INTO movimientos (uuid, fecha, categoria_id, monto, descripcion, cuenta_id) VALUES (?, ?, ?, ?, ?, ?)",
+                               {uuidNuevo(), fechaBD(m.fecha), m.categoriaId, m.monto, texto(m.descripcion.trimmed()), cuenta});
         const qint64 id = q.lastInsertId().toLongLong();
         marcar("movimientos", id);
         t.confirmar();
@@ -592,8 +672,11 @@ Resultado Cuentas::actualizarMovimiento(const Movimiento& m)
     if (!movimiento(m.id)) return {false, QStringLiteral("El movimiento ya no existe."), m.id};
     try {
         Transaccion t(db_);
-        consulta(db_, "UPDATE movimientos SET fecha = ?, categoria_id = ?, monto = ?, descripcion = ? WHERE id = ?",
-                 {fechaBD(m.fecha), m.categoriaId, m.monto, texto(m.descripcion.trimmed()), m.id});
+        const qint64 cuenta = m.cuentaId > 0 ? m.cuentaId : cuentaPrincipal();
+        if (!valor(db_, "SELECT id FROM cuentas_dinero WHERE id = ? AND borrado = 0", {cuenta}).isValid())
+            return {false, QStringLiteral("La cuenta ya no existe."), m.id};
+        consulta(db_, "UPDATE movimientos SET fecha = ?, categoria_id = ?, monto = ?, descripcion = ?, cuenta_id = ? WHERE id = ?",
+                 {fechaBD(m.fecha), m.categoriaId, m.monto, texto(m.descripcion.trimmed()), cuenta, m.id});
         marcar("movimientos", m.id);
         t.confirmar();
         return {true, QString(), m.id};
@@ -621,7 +704,9 @@ Resultado Cuentas::eliminarMovimiento(qint64 id)
 Centavos Cuentas::saldoInicial() const
 {
     try {
-        return config(QStringLiteral("saldo_inicial"), QStringLiteral("0")).toLongLong();
+        if (cuentaVista_)
+            return valor(db_, "SELECT saldo_inicial FROM cuentas_dinero WHERE id = ?", {cuentaVista_}).toLongLong();
+        return valor(db_, "SELECT COALESCE(SUM(saldo_inicial), 0) FROM cuentas_dinero WHERE borrado = 0").toLongLong();
     } catch (const std::exception&) {
         return 0;
     }
@@ -629,15 +714,14 @@ Centavos Cuentas::saldoInicial() const
 
 void Cuentas::fijarSaldoInicial(Centavos c)
 {
-    try {
-        Transaccion t(db_);
-        consulta(db_, "INSERT INTO config (clave, valor, modificado, autor, cambio) VALUES ('saldo_inicial', ?, ?, ?, ?) "
-                      "ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor, modificado = MAX(excluded.modificado, modificado + 1), "
-                      "autor = excluded.autor, cambio = excluded.cambio",
-                 {QString::number(c), ahora(), dispositivo_, siguienteCambio()});
-        t.confirmar();
-    } catch (const std::exception&) {
-    }
+    fijarSaldoInicialCuenta(cuentaVista_ ? cuentaVista_ : cuentaPrincipal(), c);
+}
+
+void Cuentas::filtrarCuenta(QString& sql, QVariantList& params) const
+{
+    if (!cuentaVista_) return;
+    sql += QStringLiteral("AND m.cuenta_id = ? ");
+    params << cuentaVista_;
 }
 
 TotalPeriodo Cuentas::totales(const QDate& desde, const QDate& hasta) const
@@ -648,6 +732,7 @@ TotalPeriodo Cuentas::totales(const QDate& desde, const QDate& hasta) const
         QVariantList params;
         if (desde.isValid()) { sql += QStringLiteral("AND m.fecha >= ? "); params << fechaBD(desde); }
         if (hasta.isValid()) { sql += QStringLiteral("AND m.fecha <= ? "); params << fechaBD(hasta); }
+        filtrarCuenta(sql, params);
         sql += QStringLiteral("GROUP BY c.tipo");
         QSqlQuery q = consulta(db_, sql, params);
         while (q.next()) (tipoBD(q.value(0).toString()) == Tipo::Ingreso ? t.ingresos : t.gastos) = q.value(1).toLongLong();
@@ -665,11 +750,13 @@ QVector<TotalPeriodo> Cuentas::totalesPorMes(int anio) const
 {
     QVector<TotalPeriodo> meses(12);
     try {
-        QSqlQuery q = consulta(db_,
+        QString sql = QStringLiteral(
             "SELECT CAST(substr(m.fecha, 6, 2) AS INTEGER), c.tipo, SUM(m.monto) "
             "FROM movimientos m JOIN categorias c ON c.id = m.categoria_id "
-            "WHERE m.borrado = 0 AND m.fecha >= ? AND m.fecha <= ? GROUP BY 1, 2",
-            {fechaBD(QDate(anio, 1, 1)), fechaBD(QDate(anio, 12, 31))});
+            "WHERE m.borrado = 0 AND m.fecha >= ? AND m.fecha <= ? ");
+        QVariantList params{fechaBD(QDate(anio, 1, 1)), fechaBD(QDate(anio, 12, 31))};
+        filtrarCuenta(sql, params);
+        QSqlQuery q = consulta(db_, sql + QStringLiteral("GROUP BY 1, 2"), params);
         while (q.next()) {
             const int mes = q.value(0).toInt();
             if (mes < 1 || mes > 12) continue;
@@ -684,9 +771,12 @@ QList<QPair<int, TotalPeriodo>> Cuentas::totalesPorAnio() const
 {
     QList<QPair<int, TotalPeriodo>> anios;
     try {
-        QSqlQuery q = consulta(db_,
+        QString sql = QStringLiteral(
             "SELECT CAST(substr(m.fecha, 1, 4) AS INTEGER), c.tipo, SUM(m.monto) "
-            "FROM movimientos m JOIN categorias c ON c.id = m.categoria_id WHERE m.borrado = 0 GROUP BY 1, 2 ORDER BY 1");
+            "FROM movimientos m JOIN categorias c ON c.id = m.categoria_id WHERE m.borrado = 0 ");
+        QVariantList params;
+        filtrarCuenta(sql, params);
+        QSqlQuery q = consulta(db_, sql + QStringLiteral("GROUP BY 1, 2 ORDER BY 1"), params);
         while (q.next()) {
             const int anio = q.value(0).toInt();
             if (anios.isEmpty() || anios.last().first != anio) anios.append({anio, TotalPeriodo{}});
@@ -707,6 +797,7 @@ QList<TotalCategoria> Cuentas::totalesPorCategoria(const QDate& desde, const QDa
         QVariantList params{textoBD(tipo)};
         if (desde.isValid()) { sql += QStringLiteral("AND m.fecha >= ? "); params << fechaBD(desde); }
         if (hasta.isValid()) { sql += QStringLiteral("AND m.fecha <= ? "); params << fechaBD(hasta); }
+        filtrarCuenta(sql, params);
         sql += QStringLiteral("GROUP BY c.id ORDER BY total DESC, c.nombre COLLATE NOCASE");
         QSqlQuery q = consulta(db_, sql, params);
         while (q.next()) lista << TotalCategoria{q.value(0).toLongLong(), q.value(1).toString(), tipo, q.value(2).toInt(), q.value(3).toLongLong()};
@@ -731,6 +822,317 @@ QDate Cuentas::ultimaFecha() const
     } catch (const std::exception&) {
         return {};
     }
+}
+
+// ====================================================================== cuentas de dinero
+
+qint64 Cuentas::cuentaPrincipal() const
+{
+    try {
+        return valor(db_, "SELECT id FROM cuentas_dinero WHERE uuid = ?", {UUID_PRINCIPAL}).toLongLong();
+    } catch (const std::exception&) {
+        return 0;
+    }
+}
+
+QList<CuentaDinero> Cuentas::cuentasDinero() const
+{
+    QList<CuentaDinero> lista;
+    try {
+        QSqlQuery q = consulta(db_,
+            "SELECT cu.id, cu.nombre, cu.saldo_inicial, cu.uuid, "
+            "COALESCE((SELECT SUM(CASE WHEN c.tipo = 'ingreso' THEN m.monto ELSE -m.monto END) FROM movimientos m "
+            "          JOIN categorias c ON c.id = m.categoria_id WHERE m.cuenta_id = cu.id AND m.borrado = 0 AND m.fecha <= ?), 0), "
+            "(SELECT COUNT(*) FROM movimientos m WHERE m.cuenta_id = cu.id AND m.borrado = 0) "
+            "FROM cuentas_dinero cu WHERE cu.borrado = 0",
+            {fechaBD(QDate::currentDate())});
+        while (q.next()) {
+            CuentaDinero c;
+            c.id = q.value(0).toLongLong();
+            c.nombre = q.value(1).toString();
+            c.saldoInicial = q.value(2).toLongLong();
+            c.principal = q.value(3).toString() == UUID_PRINCIPAL;
+            c.saldo = c.saldoInicial + q.value(4).toLongLong();
+            c.movimientos = q.value(5).toInt();
+            lista << c;
+        }
+    } catch (const std::exception&) {
+    }
+    std::sort(lista.begin(), lista.end(), [](const CuentaDinero& a, const CuentaDinero& b) {
+        if (a.principal != b.principal) return a.principal;
+        return claveOrden(a.nombre) < claveOrden(b.nombre);
+    });
+    return lista;
+}
+
+QString Cuentas::nombreLibreCuenta(const QString& nombre, qint64 excepto) const
+{
+    auto ocupado = [&](const QString& n) {
+        const QVariant id = valor(db_, "SELECT id FROM cuentas_dinero WHERE nombre = ? COLLATE NOCASE AND borrado = 0", {n});
+        return id.isValid() && id.toLongLong() != excepto;
+    };
+    if (!ocupado(nombre)) return nombre;
+    for (int i = 2;; ++i) {
+        const QString n = QStringLiteral("%1 (%2)").arg(nombre).arg(i);
+        if (!ocupado(n)) return n;
+    }
+}
+
+Resultado Cuentas::crearCuentaDinero(const QString& nombre, Centavos saldoInicial)
+{
+    const QString n = nombre.simplified();
+    if (n.isEmpty()) return {false, QStringLiteral("Escribí un nombre."), 0};
+    try {
+        if (valor(db_, "SELECT id FROM cuentas_dinero WHERE nombre = ? COLLATE NOCASE AND borrado = 0", {n}).isValid())
+            return {false, QStringLiteral("Ya hay una cuenta que se llama así."), 0};
+        Transaccion t(db_);
+        QSqlQuery q = consulta(db_, "INSERT INTO cuentas_dinero (uuid, nombre, saldo_inicial) VALUES (?, ?, ?)", {uuidNuevo(), n, saldoInicial});
+        const qint64 id = q.lastInsertId().toLongLong();
+        marcar("cuentas_dinero", id);
+        t.confirmar();
+        return {true, QString(), id};
+    } catch (const std::exception& e) {
+        return {false, errorAmigable(e), 0};
+    }
+}
+
+Resultado Cuentas::renombrarCuentaDinero(qint64 id, const QString& nombre)
+{
+    const QString n = nombre.simplified();
+    if (n.isEmpty()) return {false, QStringLiteral("Escribí un nombre."), id};
+    try {
+        const QVariant otra = valor(db_, "SELECT id FROM cuentas_dinero WHERE nombre = ? COLLATE NOCASE AND borrado = 0", {n});
+        if (otra.isValid() && otra.toLongLong() != id) return {false, QStringLiteral("Ya hay una cuenta que se llama así."), id};
+        Transaccion t(db_);
+        consulta(db_, "UPDATE cuentas_dinero SET nombre = ? WHERE id = ? AND borrado = 0", {n, id});
+        marcar("cuentas_dinero", id);
+        t.confirmar();
+        return {true, QString(), id};
+    } catch (const std::exception& e) {
+        return {false, errorAmigable(e), id};
+    }
+}
+
+Resultado Cuentas::fijarSaldoInicialCuenta(qint64 id, Centavos c)
+{
+    try {
+        if (!valor(db_, "SELECT id FROM cuentas_dinero WHERE id = ? AND borrado = 0", {id}).isValid())
+            return {false, QStringLiteral("La cuenta ya no existe."), id};
+        Transaccion t(db_);
+        consulta(db_, "UPDATE cuentas_dinero SET saldo_inicial = ? WHERE id = ?", {c, id});
+        marcar("cuentas_dinero", id);
+        t.confirmar();
+        return {true, QString(), id};
+    } catch (const std::exception& e) {
+        return {false, errorAmigable(e), id};
+    }
+}
+
+Resultado Cuentas::eliminarCuentaDinero(qint64 id, qint64 moverA)
+{
+    try {
+        if (id == cuentaPrincipal()) return {false, QStringLiteral("La cuenta principal no se puede eliminar (sí renombrar)."), id};
+        if (!valor(db_, "SELECT id FROM cuentas_dinero WHERE id = ? AND borrado = 0", {id}).isValid())
+            return {false, QStringLiteral("La cuenta ya no existe."), id};
+        const int usados = valor(db_, "SELECT COUNT(*) FROM movimientos WHERE cuenta_id = ? AND borrado = 0", {id}).toInt()
+                           + valor(db_, "SELECT COUNT(*) FROM recurrentes WHERE cuenta_id = ? AND borrado = 0", {id}).toInt();
+        if (usados > 0 && (moverA <= 0 || moverA == id
+                           || !valor(db_, "SELECT id FROM cuentas_dinero WHERE id = ? AND borrado = 0", {moverA}).isValid()))
+            return {false, QStringLiteral("La cuenta tiene movimientos: elegí a qué cuenta pasarlos."), id};
+        Transaccion t(db_);
+        QList<qint64> movidos, fijos;
+        QSqlQuery q = consulta(db_, "SELECT id FROM movimientos WHERE cuenta_id = ? AND borrado = 0", {id});
+        while (q.next()) movidos << q.value(0).toLongLong();
+        q = consulta(db_, "SELECT id FROM recurrentes WHERE cuenta_id = ? AND borrado = 0", {id});
+        while (q.next()) fijos << q.value(0).toLongLong();
+        for (qint64 m : movidos) {
+            consulta(db_, "UPDATE movimientos SET cuenta_id = ? WHERE id = ?", {moverA, m});
+            marcar("movimientos", m);
+        }
+        for (qint64 f : fijos) {
+            consulta(db_, "UPDATE recurrentes SET cuenta_id = ? WHERE id = ?", {moverA, f});
+            marcar("recurrentes", f);
+        }
+        consulta(db_, "UPDATE cuentas_dinero SET borrado = 1 WHERE id = ?", {id});
+        marcar("cuentas_dinero", id);
+        if (cuentaVista_ == id) cuentaVista_ = 0;
+        t.confirmar();
+        return {true, QString(), id};
+    } catch (const std::exception& e) {
+        return {false, errorAmigable(e), id};
+    }
+}
+
+// ====================================================================== presupuestos
+
+Resultado Cuentas::fijarPresupuesto(qint64 categoriaId, Centavos mensual)
+{
+    if (mensual < 0) return {false, QStringLiteral("El presupuesto no puede ser negativo."), categoriaId};
+    const auto c = categoria(categoriaId);
+    if (!c) return {false, QStringLiteral("La categoría ya no existe."), categoriaId};
+    if (c->tipo != Tipo::Gasto) return {false, QStringLiteral("El presupuesto es para las categorías de gastos."), categoriaId};
+    try {
+        Transaccion t(db_);
+        consulta(db_, "UPDATE categorias SET presupuesto = ? WHERE id = ?", {mensual, categoriaId});
+        marcar("categorias", categoriaId);
+        t.confirmar();
+        return {true, QString(), categoriaId};
+    } catch (const std::exception& e) {
+        return {false, errorAmigable(e), categoriaId};
+    }
+}
+
+QList<EstadoPresupuesto> Cuentas::presupuestos(int anio, int mes) const
+{
+    QList<EstadoPresupuesto> lista;
+    const QDate desde(anio, mes, 1);
+    if (!desde.isValid()) return lista;
+    try {
+        QSqlQuery q = consulta(db_,
+            "SELECT c.id, c.nombre, c.color, c.presupuesto, "
+            "COALESCE((SELECT SUM(m.monto) FROM movimientos m WHERE m.categoria_id = c.id AND m.borrado = 0 "
+            "          AND m.fecha >= ? AND m.fecha <= ?), 0) "
+            "FROM categorias c WHERE c.borrado = 0 AND c.tipo = 'gasto' AND c.presupuesto > 0",
+            {fechaBD(desde), fechaBD(desde.addMonths(1).addDays(-1))});
+        while (q.next())
+            lista << EstadoPresupuesto{q.value(0).toLongLong(), q.value(1).toString(), q.value(2).toInt(),
+                                       q.value(3).toLongLong(), q.value(4).toLongLong()};
+    } catch (const std::exception&) {
+    }
+    std::sort(lista.begin(), lista.end(), [](const EstadoPresupuesto& a, const EstadoPresupuesto& b) {
+        if (a.porcentaje() != b.porcentaje()) return a.porcentaje() > b.porcentaje();
+        return claveOrden(a.nombre) < claveOrden(b.nombre);
+    });
+    return lista;
+}
+
+// ====================================================================== movimientos fijos
+
+namespace {
+const char* const SELECT_RECURRENTE =
+    "SELECT r.id, r.categoria_id, c.nombre, c.tipo, r.cuenta_id, COALESCE(cu.nombre, ''), r.monto, r.descripcion, r.dia, "
+    "r.desde, r.hasta, r.activo, r.uuid FROM recurrentes r JOIN categorias c ON c.id = r.categoria_id "
+    "LEFT JOIN cuentas_dinero cu ON cu.id = r.cuenta_id WHERE r.borrado = 0 ";
+
+Recurrente leerRecurrente(const QSqlQuery& q)
+{
+    Recurrente r;
+    r.id = q.value(0).toLongLong();
+    r.categoriaId = q.value(1).toLongLong();
+    r.categoria = q.value(2).toString();
+    r.tipo = tipoBD(q.value(3).toString());
+    r.cuentaId = q.value(4).toLongLong();
+    r.cuenta = q.value(5).toString();
+    r.monto = q.value(6).toLongLong();
+    r.descripcion = q.value(7).toString();
+    r.dia = q.value(8).toInt();
+    r.desde = QDate::fromString(q.value(9).toString(), Qt::ISODate);
+    r.hasta = QDate::fromString(q.value(10).toString(), Qt::ISODate);
+    r.activo = q.value(11).toInt() != 0;
+    return r;
+}
+
+// La fecha de un movimiento fijo en un mes: su día, o el último del mes si es más corto
+QDate fechaEnMes(int anio, int mes, int dia)
+{
+    const QDate primero(anio, mes, 1);
+    return QDate(anio, mes, std::min(dia, primero.daysInMonth()));
+}
+}
+
+QList<Recurrente> Cuentas::recurrentes() const
+{
+    QList<Recurrente> lista;
+    try {
+        QSqlQuery q = consulta(db_, QString::fromLatin1(SELECT_RECURRENTE) + QStringLiteral("ORDER BY r.dia, c.nombre COLLATE NOCASE"));
+        while (q.next()) lista << leerRecurrente(q);
+    } catch (const std::exception&) {
+    }
+    return lista;
+}
+
+Resultado Cuentas::guardarRecurrente(const Recurrente& r)
+{
+    if (r.monto <= 0) return {false, QStringLiteral("El monto tiene que ser mayor que cero."), r.id};
+    if (r.dia < 1 || r.dia > 31) return {false, QStringLiteral("El día tiene que ser del 1 al 31."), r.id};
+    if (!r.desde.isValid()) return {false, QStringLiteral("Elegí desde qué fecha."), r.id};
+    if (r.hasta.isValid() && r.hasta < r.desde) return {false, QStringLiteral("La fecha de fin es anterior a la de inicio."), r.id};
+    if (!categoria(r.categoriaId)) return {false, QStringLiteral("Elegí una categoría."), r.id};
+    const qint64 cuenta = r.cuentaId > 0 ? r.cuentaId : cuentaPrincipal();
+    try {
+        if (!valor(db_, "SELECT id FROM cuentas_dinero WHERE id = ? AND borrado = 0", {cuenta}).isValid())
+            return {false, QStringLiteral("La cuenta ya no existe."), r.id};
+        Transaccion t(db_);
+        qint64 id = r.id;
+        const QVariantList datos{r.categoriaId, cuenta, r.monto, texto(r.descripcion.trimmed()), r.dia, fechaBD(r.desde),
+                                 r.hasta.isValid() ? fechaBD(r.hasta) : QString(QLatin1String("")), r.activo ? 1 : 0};
+        if (id > 0) {
+            if (!valor(db_, "SELECT id FROM recurrentes WHERE id = ? AND borrado = 0", {id}).isValid())
+                return {false, QStringLiteral("El movimiento fijo ya no existe."), id};
+            consulta(db_, "UPDATE recurrentes SET categoria_id = ?, cuenta_id = ?, monto = ?, descripcion = ?, dia = ?, desde = ?, "
+                          "hasta = ?, activo = ? WHERE id = ?", QVariantList(datos) << id);
+        } else {
+            QSqlQuery q = consulta(db_, "INSERT INTO recurrentes (categoria_id, cuenta_id, monto, descripcion, dia, desde, hasta, activo, uuid) "
+                                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", QVariantList(datos) << uuidNuevo());
+            id = q.lastInsertId().toLongLong();
+        }
+        marcar("recurrentes", id);
+        t.confirmar();
+        return {true, QString(), id};
+    } catch (const std::exception& e) {
+        return {false, errorAmigable(e), r.id};
+    }
+}
+
+Resultado Cuentas::eliminarRecurrente(qint64 id)
+{
+    try {
+        if (!valor(db_, "SELECT id FROM recurrentes WHERE id = ? AND borrado = 0", {id}).isValid())
+            return {false, QStringLiteral("El movimiento fijo ya no existe."), id};
+        Transaccion t(db_);
+        consulta(db_, "UPDATE recurrentes SET borrado = 1 WHERE id = ?", {id});
+        marcar("recurrentes", id);
+        t.confirmar();
+        return {true, QString(), id};      // los que ya se cargaron quedan
+    } catch (const std::exception& e) {
+        return {false, errorAmigable(e), id};
+    }
+}
+
+int Cuentas::generarRecurrentes(const QDate& hoy)
+{
+    int cargados = 0;
+    try {
+        Transaccion t(db_);
+        QSqlQuery q = consulta(db_, QString::fromLatin1(SELECT_RECURRENTE) + QStringLiteral("AND r.activo = 1"));
+        struct Pendiente { Recurrente r; QString uuid; };
+        QList<Pendiente> lista;
+        while (q.next()) lista << Pendiente{leerRecurrente(q), q.value(12).toString()};
+        for (const Pendiente& p : std::as_const(lista)) {
+            const Recurrente& r = p.r;
+            if (!r.desde.isValid() || r.desde > hoy) continue;
+            for (QDate mes(r.desde.year(), r.desde.month(), 1); mes <= hoy; mes = mes.addMonths(1)) {
+                const QDate fecha = fechaEnMes(mes.year(), mes.month(), r.dia);
+                if (fecha < r.desde) continue;
+                if (fecha > hoy || (r.hasta.isValid() && fecha > r.hasta)) break;
+                // Mismo uuid en todos los dispositivos para el mismo fijo y el mismo mes (si ya está,
+                // aunque se haya borrado, no se vuelve a cargar)
+                const QString uuid = QStringLiteral("fijo-") + hash32(p.uuid + QLatin1Char('|') + mes.toString(QStringLiteral("yyyy-MM")));
+                if (valor(db_, "SELECT id FROM movimientos WHERE uuid = ?", {uuid}).isValid()) continue;
+                // Fecha de cambio fija (la del día que corresponde) y sin autor: si la PC y el celular lo cargan
+                // los dos, son idénticos; y cualquier cambio o borrado que haga la persona es más nuevo y gana
+                const qint64 mod = QDateTime(fecha, QTime(0, 0), QTimeZone::UTC).toMSecsSinceEpoch();
+                consulta(db_, "INSERT INTO movimientos (uuid, fecha, categoria_id, monto, descripcion, cuenta_id, modificado, autor, cambio) "
+                              "VALUES (?, ?, ?, ?, ?, ?, ?, '', ?)",
+                         {uuid, fechaBD(fecha), r.categoriaId, r.monto, texto(r.descripcion), r.cuentaId, mod, siguienteCambio()});
+                ++cargados;
+            }
+        }
+        t.confirmar();
+    } catch (const std::exception&) {
+        return 0;
+    }
+    return cargados;
 }
 
 // ====================================================================== importar
@@ -774,8 +1176,9 @@ ResultadoImportacion Cuentas::procesarImportacion(const QList<FilaImportada>& fi
             // al sincronizar son los mismos movimientos y no quedan duplicados
             const QString uuid = QStringLiteral("imp-") + hash32(clave + QLatin1Char('#') + QString::number(vez));
             const bool yaEsta = valor(db_, "SELECT COUNT(*) FROM movimientos WHERE uuid = ?", {uuid}).toInt() > 0;
-            QSqlQuery q = consulta(db_, "INSERT INTO movimientos (uuid, fecha, categoria_id, monto, descripcion) VALUES (?, ?, ?, ?, ?)",
-                                   {yaEsta ? uuidNuevo() : uuid, fechaBD(f.fecha), idCategoria, f.monto, texto(f.descripcion.trimmed())});
+            QSqlQuery q = consulta(db_, "INSERT INTO movimientos (uuid, fecha, categoria_id, monto, descripcion, cuenta_id) VALUES (?, ?, ?, ?, ?, ?)",
+                                   {yaEsta ? uuidNuevo() : uuid, fechaBD(f.fecha), idCategoria, f.monto, texto(f.descripcion.trimmed()),
+                                    cuentaVista_ ? cuentaVista_ : cuentaPrincipal()});
             marcar("movimientos", q.lastInsertId().toLongLong());
         }
         ++r.nuevos;
@@ -821,26 +1224,47 @@ Resultado Cuentas::backup(const QString& destino)
 namespace {
 
 // Formato de cada fila en el intercambio (JSON):
-//   {"t":"cat","u":uuid,"mod":ms,"aut":disp,"del":0,"n":nombre,"tp":"gasto","col":3}
-//   {"t":"mov","u":uuid,"mod":ms,"aut":disp,"del":0,"f":"2026-11-01","cat":uuidCategoria,"mo":154350,"d":"..."}
-//   {"t":"cfg","u":"cfg:saldo_inicial","mod":ms,"aut":disp,"k":"saldo_inicial","v":"1000000"}
-const char* const SELECT_FILA_CAT = "SELECT uuid, modificado, autor, borrado, nombre, tipo, color FROM categorias ";
+//   {"t":"cat","u":uuid,"mod":ms,"aut":disp,"del":0,"n":nombre,"tp":"gasto","col":3,"pres":5000000}
+//   {"t":"cta","u":uuid,"mod":ms,"aut":disp,"del":0,"n":"Banco","si":1000000}
+//   {"t":"mov","u":uuid,"mod":ms,"aut":disp,"del":0,"f":"2026-11-01","cat":uuidCategoria,"mo":154350,"d":"...","cu":uuidCuenta}
+//   {"t":"rec","u":uuid,"mod":ms,"aut":disp,"del":0,"cat":uuidCategoria,"cu":uuidCuenta,"mo":..,"d":..,"dia":5,
+//    "de":"2026-11-05","ha":"","ac":1}
+const char* const SELECT_FILA_CAT = "SELECT uuid, modificado, autor, borrado, nombre, tipo, color, presupuesto FROM categorias ";
 const char* const SELECT_FILA_MOV =
-    "SELECT m.uuid, m.modificado, m.autor, m.borrado, m.fecha, c.uuid, m.monto, m.descripcion "
-    "FROM movimientos m JOIN categorias c ON c.id = m.categoria_id ";
+    "SELECT m.uuid, m.modificado, m.autor, m.borrado, m.fecha, c.uuid, m.monto, m.descripcion, COALESCE(cu.uuid, '') "
+    "FROM movimientos m JOIN categorias c ON c.id = m.categoria_id LEFT JOIN cuentas_dinero cu ON cu.id = m.cuenta_id ";
+const char* const SELECT_FILA_CTA = "SELECT uuid, modificado, autor, borrado, nombre, saldo_inicial FROM cuentas_dinero ";
+const char* const SELECT_FILA_REC =
+    "SELECT r.uuid, r.modificado, r.autor, r.borrado, c.uuid, COALESCE(cu.uuid, ''), r.monto, r.descripcion, r.dia, r.desde, "
+    "r.hasta, r.activo FROM recurrentes r JOIN categorias c ON c.id = r.categoria_id LEFT JOIN cuentas_dinero cu ON cu.id = r.cuenta_id ";
 const char* const SELECT_FILA_CFG = "SELECT clave, modificado, autor, valor FROM config ";
 
 QJsonObject filaCategoria(const QSqlQuery& q)
 {
     return QJsonObject{{"t", "cat"}, {"u", q.value(0).toString()}, {"mod", q.value(1).toLongLong()}, {"aut", q.value(2).toString()},
-                       {"del", q.value(3).toInt()}, {"n", q.value(4).toString()}, {"tp", q.value(5).toString()}, {"col", q.value(6).toInt()}};
+                       {"del", q.value(3).toInt()}, {"n", q.value(4).toString()}, {"tp", q.value(5).toString()}, {"col", q.value(6).toInt()},
+                       {"pres", q.value(7).toLongLong()}};
+}
+
+QJsonObject filaCuenta(const QSqlQuery& q)
+{
+    return QJsonObject{{"t", "cta"}, {"u", q.value(0).toString()}, {"mod", q.value(1).toLongLong()}, {"aut", q.value(2).toString()},
+                       {"del", q.value(3).toInt()}, {"n", q.value(4).toString()}, {"si", q.value(5).toLongLong()}};
+}
+
+QJsonObject filaRecurrente(const QSqlQuery& q)
+{
+    return QJsonObject{{"t", "rec"}, {"u", q.value(0).toString()}, {"mod", q.value(1).toLongLong()}, {"aut", q.value(2).toString()},
+                       {"del", q.value(3).toInt()}, {"cat", q.value(4).toString()}, {"cu", q.value(5).toString()},
+                       {"mo", q.value(6).toLongLong()}, {"d", q.value(7).toString()}, {"dia", q.value(8).toInt()},
+                       {"de", q.value(9).toString()}, {"ha", q.value(10).toString()}, {"ac", q.value(11).toInt()}};
 }
 
 QJsonObject filaMovimiento(const QSqlQuery& q)
 {
     return QJsonObject{{"t", "mov"}, {"u", q.value(0).toString()}, {"mod", q.value(1).toLongLong()}, {"aut", q.value(2).toString()},
                        {"del", q.value(3).toInt()}, {"f", q.value(4).toString()}, {"cat", q.value(5).toString()},
-                       {"mo", q.value(6).toLongLong()}, {"d", q.value(7).toString()}};
+                       {"mo", q.value(6).toLongLong()}, {"d", q.value(7).toString()}, {"cu", q.value(8).toString()}};
 }
 
 QJsonObject filaConfig(const QSqlQuery& q)
@@ -864,8 +1288,12 @@ QJsonArray Cuentas::cambiosDesde(qint64 desde) const
     try {
         QSqlQuery q = consulta(db_, QString::fromLatin1(SELECT_FILA_CAT) + QStringLiteral("WHERE cambio > ? ORDER BY cambio"), {desde});
         while (q.next()) filas << filaCategoria(q);
+        q = consulta(db_, QString::fromLatin1(SELECT_FILA_CTA) + QStringLiteral("WHERE cambio > ? ORDER BY cambio"), {desde});
+        while (q.next()) filas << filaCuenta(q);
         q = consulta(db_, QString::fromLatin1(SELECT_FILA_MOV) + QStringLiteral("WHERE m.cambio > ? ORDER BY m.cambio"), {desde});
         while (q.next()) filas << filaMovimiento(q);
+        q = consulta(db_, QString::fromLatin1(SELECT_FILA_REC) + QStringLiteral("WHERE r.cambio > ? ORDER BY r.cambio"), {desde});
+        while (q.next()) filas << filaRecurrente(q);
         q = consulta(db_, QString::fromLatin1(SELECT_FILA_CFG) + QStringLiteral("WHERE cambio > ? AND ") + condicionConfig(), {desde});
         while (q.next()) filas << filaConfig(q);
     } catch (const std::exception&) {
@@ -885,8 +1313,12 @@ QJsonArray Cuentas::filasPorUuid(const QStringList& uuids) const
             }
             QSqlQuery q = consulta(db_, QString::fromLatin1(SELECT_FILA_CAT) + QStringLiteral("WHERE uuid = ?"), {u});
             if (q.next()) { filas << filaCategoria(q); continue; }
+            q = consulta(db_, QString::fromLatin1(SELECT_FILA_CTA) + QStringLiteral("WHERE uuid = ?"), {u});
+            if (q.next()) { filas << filaCuenta(q); continue; }
             q = consulta(db_, QString::fromLatin1(SELECT_FILA_MOV) + QStringLiteral("WHERE m.uuid = ?"), {u});
-            if (q.next()) filas << filaMovimiento(q);
+            if (q.next()) { filas << filaMovimiento(q); continue; }
+            q = consulta(db_, QString::fromLatin1(SELECT_FILA_REC) + QStringLiteral("WHERE r.uuid = ?"), {u});
+            if (q.next()) filas << filaRecurrente(q);
         }
     } catch (const std::exception&) {
     }
@@ -913,8 +1345,16 @@ ResultadoAplicar Cuentas::aplicarCambios(const QJsonArray& filas)
         Transaccion t(db_);
         struct Pendiente { qint64 id; QString uuid, nombre; Tipo tipo; };
         QList<Pendiente> pendientes;
-        // Primero las categorías (los movimientos las nombran por uuid), después movimientos y config
-        for (const char* tipoFila : {"cat", "mov", "cfg"}) {
+        struct CuentaPendiente { qint64 id; QString uuid, nombre; };
+        QList<CuentaPendiente> cuentasPendientes;
+        // Primero las categorías y las cuentas (los movimientos las nombran por uuid), después movimientos,
+        // fijos y config
+        const qint64 principal = cuentaPrincipal();
+        const auto idCuenta = [&](const QString& uuidCuenta) -> qint64 {   // sin cuenta (o una que no está): la principal
+            const QVariant id = uuidCuenta.isEmpty() ? QVariant() : valor(db_, "SELECT id FROM cuentas_dinero WHERE uuid = ?", {uuidCuenta});
+            return id.isValid() ? id.toLongLong() : principal;
+        };
+        for (const char* tipoFila : {"cat", "cta", "mov", "rec", "cfg"}) {
             if (qstrcmp(tipoFila, "mov") == 0) {
                 // Nombres definitivos de las categorías recién llegadas: si otra distinta de acá ya se llama
                 // así, la que llegó queda «Nombre (2)» y ese nombre vuelve al otro dispositivo
@@ -923,6 +1363,17 @@ ResultadoAplicar Cuentas::aplicarCambios(const QJsonArray& filas)
                     consulta(db_, "UPDATE categorias SET nombre = ? WHERE id = ?", {libre, p.id});
                     if (libre != p.nombre) {
                         marcar("categorias", p.id);
+                        r.ganadorasLocales << p.uuid;
+                    } else {
+                        r.aceptadas << p.uuid;
+                    }
+                }
+                // Lo mismo con las cuentas («Banco» creada en los dos lados)
+                for (const CuentaPendiente& p : cuentasPendientes) {
+                    const QString libre = nombreLibreCuenta(p.nombre, p.id);
+                    consulta(db_, "UPDATE cuentas_dinero SET nombre = ? WHERE id = ?", {libre, p.id});
+                    if (libre != p.nombre) {
+                        marcar("cuentas_dinero", p.id);
                         r.ganadorasLocales << p.uuid;
                     } else {
                         r.aceptadas << p.uuid;
@@ -942,6 +1393,7 @@ ResultadoAplicar Cuentas::aplicarCambios(const QJsonArray& filas)
                     const Tipo tipo = tipoBD(o.value(QLatin1String("tp")).toString());
                     QString nombre = o.value(QLatin1String("n")).toString().simplified();
                     const int color = std::clamp(o.value(QLatin1String("col")).toInt(), 0, COLORES - 1);
+                    const qint64 presupuesto = std::max<qint64>(0, o.value(QLatin1String("pres")).toVariant().toLongLong());
                     if (nombre.isEmpty()) { ++r.ignoradas; continue; }
                     QSqlQuery q = consulta(db_, "SELECT id, modificado, autor FROM categorias WHERE uuid = ?", {uuid});
                     qint64 id = 0;
@@ -956,15 +1408,68 @@ ResultadoAplicar Cuentas::aplicarCambios(const QJsonArray& filas)
                     // así un renombre que viene en el mismo paquete no choca con otro que todavía no se aplicó
                     const QString provisorio = del ? nombre : QStringLiteral("\x01") + uuid;
                     if (id) {
-                        consulta(db_, "UPDATE categorias SET nombre = ?, color = ?, borrado = ?, modificado = ?, autor = ?, cambio = ? WHERE id = ?",
-                                 {provisorio, color, del, mod, aut, siguienteCambio(), id});
+                        consulta(db_, "UPDATE categorias SET nombre = ?, color = ?, presupuesto = ?, borrado = ?, modificado = ?, autor = ?, cambio = ? WHERE id = ?",
+                                 {provisorio, color, presupuesto, del, mod, aut, siguienteCambio(), id});
                     } else {
-                        q = consulta(db_, "INSERT INTO categorias (uuid, nombre, tipo, color, borrado, modificado, autor, cambio) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                                     {uuid, provisorio, textoBD(tipo), color, del, mod, aut, siguienteCambio()});
+                        q = consulta(db_, "INSERT INTO categorias (uuid, nombre, tipo, color, presupuesto, borrado, modificado, autor, cambio) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                     {uuid, provisorio, textoBD(tipo), color, presupuesto, del, mod, aut, siguienteCambio()});
                         id = q.lastInsertId().toLongLong();
                     }
                     if (del) r.aceptadas << uuid;
                     else pendientes << Pendiente{id, uuid, nombre, tipo};
+                    ++r.aplicadas;
+                } else if (qstrcmp(tipoFila, "cta") == 0) {
+                    const QString nombre = o.value(QLatin1String("n")).toString().simplified();
+                    const qint64 saldoIni = o.value(QLatin1String("si")).toVariant().toLongLong();
+                    if (nombre.isEmpty()) { ++r.ignoradas; continue; }
+                    QSqlQuery q = consulta(db_, "SELECT id, modificado, autor FROM cuentas_dinero WHERE uuid = ?", {uuid});
+                    qint64 id = 0;
+                    if (q.next()) {
+                        id = q.value(0).toLongLong();
+                        if (!ganaRemota(mod, aut, q.value(1).toLongLong(), q.value(2).toString())) {
+                            if (mod != q.value(1).toLongLong() || aut != q.value(2).toString()) r.ganadorasLocales << uuid;
+                            continue;
+                        }
+                    }
+                    // Primero con un nombre provisorio único; el definitivo se pone antes de los movimientos (arriba):
+                    // si otra cuenta de acá ya se llama así (las dos crearon «Banco»), la que llegó queda «Banco (2)»
+                    const QString provisorio = del ? nombre : QStringLiteral("\x01") + uuid;
+                    if (id) {
+                        consulta(db_, "UPDATE cuentas_dinero SET nombre = ?, saldo_inicial = ?, borrado = ?, modificado = ?, autor = ?, cambio = ? WHERE id = ?",
+                                 {provisorio, saldoIni, del, mod, aut, siguienteCambio(), id});
+                    } else {
+                        q = consulta(db_, "INSERT INTO cuentas_dinero (uuid, nombre, saldo_inicial, borrado, modificado, autor, cambio) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                     {uuid, provisorio, saldoIni, del, mod, aut, siguienteCambio()});
+                        id = q.lastInsertId().toLongLong();
+                    }
+                    if (del) r.aceptadas << uuid;
+                    else cuentasPendientes << CuentaPendiente{id, uuid, nombre};
+                    ++r.aplicadas;
+                } else if (qstrcmp(tipoFila, "rec") == 0) {
+                    const QVariant idCat = valor(db_, "SELECT id FROM categorias WHERE uuid = ?", {o.value(QLatin1String("cat")).toString()});
+                    const qint64 monto = o.value(QLatin1String("mo")).toVariant().toLongLong();
+                    const int dia = o.value(QLatin1String("dia")).toInt();
+                    const QDate de = QDate::fromString(o.value(QLatin1String("de")).toString(), Qt::ISODate);
+                    if (!idCat.isValid() || monto <= 0 || dia < 1 || dia > 31 || !de.isValid()) { ++r.ignoradas; continue; }
+                    QSqlQuery q = consulta(db_, "SELECT id, modificado, autor FROM recurrentes WHERE uuid = ?", {uuid});
+                    const QVariantList datos{idCat, idCuenta(o.value(QLatin1String("cu")).toString()), monto,
+                                             texto(o.value(QLatin1String("d")).toString()), dia, fechaBD(de),
+                                             texto(o.value(QLatin1String("ha")).toString()), o.value(QLatin1String("ac")).toInt() ? 1 : 0,
+                                             del, mod, aut, siguienteCambio()};
+                    if (q.next()) {
+                        if (!ganaRemota(mod, aut, q.value(1).toLongLong(), q.value(2).toString())) {
+                            if (mod != q.value(1).toLongLong() || aut != q.value(2).toString()) r.ganadorasLocales << uuid;
+                            continue;
+                        }
+                        consulta(db_, "UPDATE recurrentes SET categoria_id = ?, cuenta_id = ?, monto = ?, descripcion = ?, dia = ?, desde = ?, "
+                                      "hasta = ?, activo = ?, borrado = ?, modificado = ?, autor = ?, cambio = ? WHERE id = ?",
+                                 QVariantList(datos) << q.value(0));
+                    } else {
+                        consulta(db_, "INSERT INTO recurrentes (categoria_id, cuenta_id, monto, descripcion, dia, desde, hasta, activo, borrado, "
+                                      "modificado, autor, cambio, uuid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                 QVariantList(datos) << uuid);
+                    }
+                    r.aceptadas << uuid;
                     ++r.aplicadas;
                 } else if (qstrcmp(tipoFila, "mov") == 0) {
                     const QDate fecha = QDate::fromString(o.value(QLatin1String("f")).toString(), Qt::ISODate);
@@ -978,13 +1483,15 @@ ResultadoAplicar Cuentas::aplicarCambios(const QJsonArray& filas)
                             if (mod != q.value(1).toLongLong() || aut != q.value(2).toString()) r.ganadorasLocales << uuid;
                             continue;
                         }
-                        consulta(db_, "UPDATE movimientos SET fecha = ?, categoria_id = ?, monto = ?, descripcion = ?, borrado = ?, "
+                        consulta(db_, "UPDATE movimientos SET fecha = ?, categoria_id = ?, monto = ?, descripcion = ?, cuenta_id = ?, borrado = ?, "
                                       "modificado = ?, autor = ?, cambio = ? WHERE id = ?",
-                                 {fechaBD(fecha), idCat, monto, desc, del, mod, aut, siguienteCambio(), q.value(0)});
+                                 {fechaBD(fecha), idCat, monto, desc, idCuenta(o.value(QLatin1String("cu")).toString()), del, mod, aut,
+                                  siguienteCambio(), q.value(0)});
                     } else {
-                        consulta(db_, "INSERT INTO movimientos (uuid, fecha, categoria_id, monto, descripcion, borrado, modificado, autor, cambio) "
-                                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                                 {uuid, fechaBD(fecha), idCat, monto, desc, del, mod, aut, siguienteCambio()});
+                        consulta(db_, "INSERT INTO movimientos (uuid, fecha, categoria_id, monto, descripcion, cuenta_id, borrado, modificado, autor, cambio) "
+                                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                 {uuid, fechaBD(fecha), idCat, monto, desc, idCuenta(o.value(QLatin1String("cu")).toString()), del, mod, aut,
+                                  siguienteCambio()});
                     }
                     r.aceptadas << uuid;
                     ++r.aplicadas;
@@ -1020,6 +1527,21 @@ ResultadoAplicar Cuentas::aplicarCambios(const QJsonArray& filas)
             consulta(db_, "UPDATE categorias SET nombre = ?, borrado = 0 WHERE id = ?",
                      {nombreLibre(c.value(0).toString(), tipoBD(c.value(1).toString()), id), id});
             marcar("categorias", id);
+        }
+        // Lo mismo con las cuentas: un movimiento o fijo vivo en una cuenta borrada hace que la cuenta vuelva
+        QList<qint64> revivirCuentas;
+        q = consulta(db_, "SELECT DISTINCT cu.id FROM cuentas_dinero cu WHERE cu.borrado = 1 AND ("
+                          "EXISTS (SELECT 1 FROM movimientos m WHERE m.cuenta_id = cu.id AND m.borrado = 0) OR "
+                          "EXISTS (SELECT 1 FROM recurrentes f WHERE f.cuenta_id = cu.id AND f.borrado = 0))");
+        while (q.next()) revivirCuentas << q.value(0).toLongLong();
+        for (qint64 id : revivirCuentas) {
+            QSqlQuery c = consulta(db_, "SELECT nombre, uuid FROM cuentas_dinero WHERE id = ?", {id});
+            if (!c.next()) continue;
+            const QString uuid = c.value(1).toString();
+            r.aceptadas.removeAll(uuid);
+            r.ganadorasLocales << uuid;
+            consulta(db_, "UPDATE cuentas_dinero SET nombre = ?, borrado = 0 WHERE id = ?", {nombreLibreCuenta(c.value(0).toString(), id), id});
+            marcar("cuentas_dinero", id);
         }
         t.confirmar();
     } catch (const std::exception& e) {

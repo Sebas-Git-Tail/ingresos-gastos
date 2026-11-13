@@ -1,5 +1,11 @@
 #include "db.h"
 #include <QTemporaryDir>
+#include <QSqlQuery>
+#include <QSqlError>
+#include <QDir>
+#include <QFile>
+#include <QSqlDatabase>
+#include <QCoreApplication>
 #include <QtTest>
 
 namespace {
@@ -21,7 +27,7 @@ private slots:
     void categoriasIniciales()
     {
         Cuentas c(":memory:");
-        QVERIFY(c.abierta());
+        QVERIFY2(c.abierta(), qPrintable(c.errorApertura()));
         QStringList gastos, ingresos;
         for (const Categoria& k : c.categorias(Tipo::Gasto)) gastos << k.nombre;
         for (const Categoria& k : c.categorias(Tipo::Ingreso)) ingresos << k.nombre;
@@ -266,6 +272,146 @@ private slots:
         QCOMPARE(otra.categorias(Tipo::Gasto).size(), 9);              // no vuelve a crear las iniciales
         Cuentas copia(dir.filePath("copias/copia.db"));
         QCOMPARE(copia.movimientos().first().monto, Centavos(5000));
+    }
+
+    // ---- 2.1.0: cuentas, presupuestos y movimientos fijos
+
+    void cuentasDeDinero()
+    {
+        Cuentas c(":memory:");
+        const QList<CuentaDinero> inicio = c.cuentasDinero();
+        QCOMPARE(inicio.size(), 1);
+        QVERIFY(inicio.first().principal);
+        QCOMPARE(inicio.first().nombre, QStringLiteral("Principal"));
+        const qint64 principal = c.cuentaPrincipal();
+        QCOMPARE(inicio.first().id, principal);
+
+        const Resultado banco = c.crearCuentaDinero("Banco", 100000);
+        QVERIFY(banco.ok);
+        QVERIFY(!c.crearCuentaDinero("banco").ok);                 // mismo nombre
+        QVERIFY(!c.crearCuentaDinero("  ").ok);
+
+        Movimiento sueldo = mov(c, QDate::currentDate(), "Sueldo", Tipo::Ingreso, 500000);
+        sueldo.cuentaId = banco.id;
+        QVERIFY(c.crearMovimiento(sueldo).ok);
+        QVERIFY(c.crearMovimiento(mov(c, QDate::currentDate(), "Supermercado", Tipo::Gasto, 30000)).ok);   // sin cuenta: principal
+        c.fijarSaldoInicial(20000);                                // mirando todas: va a la principal
+
+        QCOMPARE(c.saldo(), 100000 + 500000 + 20000 - 30000);
+        c.verCuenta(banco.id);
+        QCOMPARE(c.saldo(), 100000 + 500000);
+        QCOMPARE(c.movimientos().size(), 1);
+        QCOMPARE(c.movimientos().first().cuenta, QStringLiteral("Banco"));
+        QCOMPARE(c.totales({}, {}).gastos, 0);
+        c.verCuenta(principal);
+        QCOMPARE(c.saldo(), 20000 - 30000);
+        c.verCuenta(0);
+
+        // Eliminar: la principal no; una con movimientos, pasándolos a otra
+        QVERIFY(!c.eliminarCuentaDinero(principal).ok);
+        QVERIFY(!c.eliminarCuentaDinero(banco.id).ok);
+        QVERIFY(c.eliminarCuentaDinero(banco.id, principal).ok);
+        QCOMPARE(c.cuentasDinero().size(), 1);
+        QCOMPARE(c.movimientos().size(), 2);
+        QCOMPARE(c.saldo(), 20000 + 500000 - 30000);               // el saldo inicial del banco ya no está
+        QVERIFY(c.renombrarCuentaDinero(principal, "Efectivo").ok);
+        QCOMPARE(c.cuentasDinero().first().nombre, QStringLiteral("Efectivo"));
+    }
+
+    void migraBaseDeLa2_0()
+    {
+        const QString ruta = QDir::temp().filePath(QStringLiteral("ig_v2_%1.db").arg(QCoreApplication::applicationPid()));
+        QFile::remove(ruta);
+        {
+            QSqlDatabase db = QSqlDatabase::addDatabase("QSQLITE", "v2");
+            db.setDatabaseName(ruta);
+            QVERIFY(db.open());
+            QSqlQuery q(db);
+            for (const char* s : {
+                     "CREATE TABLE config (clave TEXT PRIMARY KEY, valor TEXT NOT NULL, modificado INTEGER NOT NULL DEFAULT 0, autor TEXT NOT NULL DEFAULT '', cambio INTEGER NOT NULL DEFAULT 0)",
+                     "CREATE TABLE categorias (id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT NOT NULL UNIQUE, nombre TEXT NOT NULL, tipo TEXT NOT NULL, color INTEGER NOT NULL DEFAULT 0, modificado INTEGER NOT NULL DEFAULT 0, autor TEXT NOT NULL DEFAULT '', cambio INTEGER NOT NULL DEFAULT 0, borrado INTEGER NOT NULL DEFAULT 0)",
+                     "CREATE TABLE movimientos (id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT NOT NULL UNIQUE, fecha TEXT NOT NULL, categoria_id INTEGER NOT NULL REFERENCES categorias(id), monto INTEGER NOT NULL CHECK (monto > 0), descripcion TEXT NOT NULL DEFAULT '', modificado INTEGER NOT NULL DEFAULT 0, autor TEXT NOT NULL DEFAULT '', cambio INTEGER NOT NULL DEFAULT 0, borrado INTEGER NOT NULL DEFAULT 0)",
+                     "CREATE TABLE pares (dispositivo TEXT PRIMARY KEY, nombre TEXT NOT NULL DEFAULT '', secreto TEXT NOT NULL, host TEXT NOT NULL DEFAULT '', puerto INTEGER NOT NULL DEFAULT 0, enviado INTEGER NOT NULL DEFAULT 0, recibido INTEGER NOT NULL DEFAULT 0, ultima_sinc TEXT NOT NULL DEFAULT '')",
+                     "INSERT INTO config (clave, valor, modificado, autor) VALUES ('saldo_inicial', '150000', 1234, 'otro'), ('dispositivo', 'yo', 0, '')",
+                     "INSERT INTO categorias (id, uuid, nombre, tipo) VALUES (1, 'c1', 'Supermercado', 'gasto'), (2, 'c2', 'Sueldo', 'ingreso')",
+                     "INSERT INTO movimientos (uuid, fecha, categoria_id, monto) VALUES ('m1', '2026-10-01', 2, 900000), ('m2', '2026-10-02', 1, 40000)",
+                     "PRAGMA user_version = 2"})
+                QVERIFY2(q.exec(QString::fromLatin1(s)), qPrintable(q.lastError().text()));
+        }
+        QSqlDatabase::removeDatabase("v2");
+        Cuentas c(ruta);
+        QVERIFY2(c.abierta(), qPrintable(c.errorApertura()));
+        QCOMPARE(c.cuentasDinero().size(), 1);
+        QCOMPARE(c.cuentasDinero().first().saldoInicial, 150000);
+        QCOMPARE(c.saldo(QDate(2026, 12, 31)), 150000 + 900000 - 40000);
+        for (const Movimiento& m : c.movimientos()) QCOMPARE(m.cuentaId, c.cuentaPrincipal());
+        QCOMPARE(c.categorias(Tipo::Gasto).first().presupuesto, 0);
+        QFile::remove(ruta);
+    }
+
+    void presupuestos()
+    {
+        Cuentas c(":memory:");
+        const qint64 super = idDe(c, "Supermercado", Tipo::Gasto);
+        QVERIFY(c.fijarPresupuesto(super, 100000).ok);
+        QVERIFY(!c.fijarPresupuesto(idDe(c, "Sueldo", Tipo::Ingreso), 1000).ok);   // solo gastos
+        QVERIFY(!c.fijarPresupuesto(super, -5).ok);
+        QVERIFY(c.crearMovimiento(mov(c, {2026, 11, 3}, "Supermercado", Tipo::Gasto, 60000)).ok);
+        QVERIFY(c.crearMovimiento(mov(c, {2026, 11, 20}, "Supermercado", Tipo::Gasto, 45000)).ok);
+        QVERIFY(c.crearMovimiento(mov(c, {2026, 10, 20}, "Supermercado", Tipo::Gasto, 99999)).ok);   // otro mes
+        const QList<EstadoPresupuesto> p = c.presupuestos(2026, 11);
+        QCOMPARE(p.size(), 1);
+        QCOMPARE(p.first().gastado, 105000);
+        QCOMPARE(p.first().porcentaje(), 105);
+        QCOMPARE(c.presupuestos(2026, 9).first().gastado, 0);
+        QVERIFY(c.fijarPresupuesto(super, 0).ok);
+        QVERIFY(c.presupuestos(2026, 11).isEmpty());
+    }
+
+    void movimientosFijos()
+    {
+        Cuentas c(":memory:");
+        Recurrente alquiler;
+        alquiler.categoriaId = idDe(c, "Servicios", Tipo::Gasto);
+        alquiler.monto = 250000;
+        alquiler.descripcion = "Alquiler";
+        alquiler.dia = 31;
+        alquiler.desde = QDate(2026, 1, 10);
+        const Resultado r = c.guardarRecurrente(alquiler);
+        QVERIFY2(r.ok, qPrintable(r.error));
+        alquiler.id = r.id;
+
+        QCOMPARE(c.generarRecurrentes(QDate(2026, 3, 15)), 2);     // 31/1 y 28/2 (marzo todavía no)
+        QCOMPARE(c.generarRecurrentes(QDate(2026, 3, 15)), 0);     // no duplica
+        QStringList fechas;
+        for (const Movimiento& m : c.movimientos()) fechas << m.fecha.toString(Qt::ISODate);
+        QCOMPARE(fechas, (QStringList{"2026-02-28", "2026-01-31"}));
+
+        // Borrar uno generado: no vuelve
+        QVERIFY(c.eliminarMovimiento(c.movimientos().first().id).ok);
+        QCOMPARE(c.generarRecurrentes(QDate(2026, 3, 31)), 1);     // solo marzo
+        QCOMPARE(c.movimientos().size(), 2);
+
+        // Con fecha de fin y pausado
+        alquiler.hasta = QDate(2026, 4, 30);
+        QVERIFY(c.guardarRecurrente(alquiler).ok);
+        QCOMPARE(c.generarRecurrentes(QDate(2026, 8, 1)), 1);      // abril y nada más
+        alquiler.activo = false;
+        alquiler.hasta = QDate();
+        QVERIFY(c.guardarRecurrente(alquiler).ok);
+        QCOMPARE(c.generarRecurrentes(QDate(2026, 12, 31)), 0);
+
+        QCOMPARE(c.recurrentes().size(), 1);
+        QVERIFY(c.eliminarRecurrente(alquiler.id).ok);
+        QVERIFY(c.recurrentes().isEmpty());
+        QCOMPARE(c.movimientos().size(), 3);                       // los cargados quedan
+
+        Recurrente malo;
+        malo.categoriaId = idDe(c, "Sueldo", Tipo::Ingreso);
+        malo.monto = 10;
+        malo.dia = 32;
+        malo.desde = QDate(2026, 1, 1);
+        QVERIFY(!c.guardarRecurrente(malo).ok);
     }
 };
 

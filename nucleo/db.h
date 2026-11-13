@@ -35,7 +35,7 @@ class Cuentas : public BaseSinc
 public:
     static QString rutaPorDefecto();              // Linux: ~/.local/share/ingresos-gastos/cuentas.db
     static constexpr int COLORES = 8;             // colores de la paleta de los gráficos
-    static constexpr int VERSION_ESQUEMA = 2;
+    static constexpr int VERSION_ESQUEMA = 3;     // 3: cuentas, presupuestos y movimientos fijos (2.1.0)
 
     explicit Cuentas(const QString& ruta);        // ":memory:" para pruebas
     ~Cuentas() override;
@@ -63,9 +63,33 @@ public:
     Resultado actualizarMovimiento(const Movimiento& m);
     Resultado eliminarMovimiento(qint64 id);
 
+    // ---- cuentas de dinero (efectivo, banco, Mercado Pago...). Siempre está la principal.
+    QList<CuentaDinero> cuentasDinero() const;                  // la principal primero; con saldo y movimientos
+    qint64 cuentaPrincipal() const;
+    Resultado crearCuentaDinero(const QString& nombre, Centavos saldoInicial = 0);
+    Resultado renombrarCuentaDinero(qint64 id, const QString& nombre);
+    Resultado fijarSaldoInicialCuenta(qint64 id, Centavos c);
+    Resultado eliminarCuentaDinero(qint64 id, qint64 moverA = 0);   // la principal no; si tiene movimientos, a cuál pasarlos
+    // Qué cuenta se está mirando (0 = todas): filtra movimientos(), totales, gráficos y saldo
+    void verCuenta(qint64 id) { cuentaVista_ = id; }
+    qint64 cuentaVista() const { return cuentaVista_; }
+
+    // ---- presupuestos (por categoría de gasto, por mes; de todas las cuentas)
+    Resultado fijarPresupuesto(qint64 categoriaId, Centavos mensual);   // 0 = sin presupuesto
+    QList<EstadoPresupuesto> presupuestos(int anio, int mes) const;     // las que tienen presupuesto, de la más gastada a la menos
+
+    // ---- movimientos fijos (se cargan solos todos los meses)
+    QList<Recurrente> recurrentes() const;
+    Resultado guardarRecurrente(const Recurrente& r);           // id 0 = uno nuevo
+    Resultado eliminarRecurrente(qint64 id);
+    // Carga lo que corresponda hasta hoy (incluido). Cada movimiento generado tiene un uuid que sale del
+    // movimiento fijo y del mes: si la PC y el celular lo generan los dos, al sincronizar es el mismo y no
+    // se duplica; y si se borra, no vuelve. Devuelve cuántos cargó.
+    int generarRecurrentes(const QDate& hoy = QDate::currentDate());
+
     // ---- saldo y totales
-    Centavos saldoInicial() const;
-    void fijarSaldoInicial(Centavos c);
+    Centavos saldoInicial() const;                     // de la cuenta que se mira (o de todas)
+    void fijarSaldoInicial(Centavos c);                // de la cuenta que se mira (o de la principal)
     Centavos saldo(const QDate& hasta = QDate::currentDate()) const;   // saldo inicial + ingresos - gastos hasta esa fecha
     TotalPeriodo totales(const QDate& desde, const QDate& hasta) const;
     QVector<TotalPeriodo> totalesPorMes(int anio) const;               // 12 meses
@@ -101,6 +125,10 @@ public:
 private:
     void crearEsquema();
     void migrarDesdeV1();
+    void migrarDesdeV2();
+    void asegurarCuentaPrincipal();
+    void filtrarCuenta(QString& sql, QVariantList& params) const;   // «AND m.cuenta_id = ?» si se mira una cuenta
+    QString nombreLibreCuenta(const QString& nombre, qint64 excepto) const;
     void crearCategoriasIniciales();
     int colorLibre(Tipo tipo) const;
     qint64 siguienteCambio();
@@ -117,4 +145,5 @@ private:
     bool abierta_ = false;
     QString errorApertura_;
     QString dispositivo_;
+    qint64 cuentaVista_ = 0;
 };

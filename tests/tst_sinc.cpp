@@ -405,6 +405,57 @@ private slots:
         QVERIFY(c.crearCategoria("Gym", Tipo::Gasto).ok);
         QCOMPARE(c.buscarCategoria("Gym", Tipo::Gasto)->nombre, QString("Gym"));
     }
+
+    // ---- 2.1.0: cuentas, presupuestos y movimientos fijos viajan; un fijo no se duplica
+    void cuentasPresupuestosYFijos()
+    {
+        Escenario e;
+        QVERIFY(e.emparejar());
+        // Los dos crean una cuenta «Banco» por su lado: quedan las dos, una como «Banco (2)»
+        QVERIFY(e.pc.crearCuentaDinero("Banco", 1000).ok);
+        QVERIFY(e.cel.crearCuentaDinero("Banco", 2000).ok);
+        QVERIFY(e.pc.fijarPresupuesto(idCat(e.pc, "Supermercado", Tipo::Gasto), 80000).ok);
+        // Un fijo creado en la PC, que la PC ya cargó
+        Recurrente r;
+        r.categoriaId = idCat(e.pc, "Internet", Tipo::Gasto);
+        r.monto = 15000;
+        r.dia = 10;
+        r.desde = QDate::currentDate().addMonths(-2);
+        QVERIFY(e.pc.guardarRecurrente(r).ok);
+        QVERIFY(e.pc.generarRecurrentes() >= 2);
+        QVERIFY(e.sincronizar().ok);
+        QVERIFY(e.sincronizar().ok);                               // el nombre ajustado vuelve a la PC
+
+        QStringList cuentasPc, cuentasCel;
+        for (const CuentaDinero& c : e.pc.cuentasDinero()) cuentasPc << c.nombre + "=" + QString::number(c.saldoInicial);
+        for (const CuentaDinero& c : e.cel.cuentasDinero()) cuentasCel << c.nombre + "=" + QString::number(c.saldoInicial);
+        QCOMPARE(cuentasPc.size(), 3);
+        QCOMPARE(cuentasPc, cuentasCel);
+        QVERIFY(cuentasPc.contains("Banco (2)=1000") || cuentasPc.contains("Banco (2)=2000"));
+        QCOMPARE(e.cel.buscarCategoria("Supermercado", Tipo::Gasto)->presupuesto, 80000);
+        QCOMPARE(e.cel.presupuestos(QDate::currentDate().year(), QDate::currentDate().month()).size(), 1);
+        QCOMPARE(e.cel.recurrentes().size(), 1);
+
+        // El celular «también» genera los mismos meses: no se duplican
+        const int antes = e.cel.movimientos().size();
+        QCOMPARE(e.cel.generarRecurrentes(), 0);
+        QCOMPARE(e.cel.movimientos().size(), antes);
+        QVERIFY(e.sincronizar().ok);
+        QCOMPARE(e.pc.movimientos().size(), e.cel.movimientos().size());
+
+        // Un movimiento en el banco del celular viaja con su cuenta
+        Movimiento m;
+        m.fecha = QDate::currentDate();
+        m.categoriaId = idCat(e.cel, "Sueldo", Tipo::Ingreso);
+        m.monto = 777;
+        for (const CuentaDinero& c : e.cel.cuentasDinero()) if (!c.principal) { m.cuentaId = c.id; break; }
+        QVERIFY(e.cel.crearMovimiento(m).ok);
+        QVERIFY(e.sincronizar().ok);
+        bool encontrado = false;
+        for (const Movimiento& x : e.pc.movimientos())
+            if (x.monto == 777) { encontrado = true; QVERIFY(x.cuenta.startsWith("Banco")); }
+        QVERIFY(encontrado);
+    }
 };
 
 QTEST_MAIN(TstSinc)
