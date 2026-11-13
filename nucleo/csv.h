@@ -8,8 +8,8 @@
  *
  * Se exporta con «;» como separador, montos con coma decimal y fechas dd/mm/aaaa, que es como
  * Excel y LibreOffice en español abren un CSV sin preguntar nada:
- *   Fecha;Tipo;Categoría;Monto;Descripción
- *   01/11/2026;Gasto;Supermercado;15430,50;Compra semanal
+ *   Fecha;Tipo;Categoría;Monto;Descripción;Cuenta
+ *   01/11/2026;Gasto;Supermercado;15430,50;Compra semanal;Efectivo
  *
  * Al importar se aceptan también «,» o tabulación como separador, columnas en otro orden y con
  * otros nombres (Importe, Detalle, Concepto...). Si no hay columna Tipo, un monto negativo es un gasto.
@@ -21,6 +21,7 @@ struct FilaImportada {
     QString categoria;          // vacío = sin categoría (se usa «Gastos Varios» / «Ingresos Varios»)
     Centavos monto = 0;         // siempre positivo
     QString descripcion;
+    QString cuenta;             // vacío = la cuenta que se está mirando (o la principal)
     int linea = 0;              // línea del archivo, para los avisos
 };
 

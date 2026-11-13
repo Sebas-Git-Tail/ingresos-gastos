@@ -18,6 +18,7 @@ struct ResultadoImportacion {
     int nuevos = 0;
     int repetidos = 0;              // ya estaban (misma fecha, categoría, monto y descripción): no se duplican
     QStringList categoriasNuevas;   // "Gasto: Farmacia"
+    QStringList cuentasNuevas;      // las que nombra el archivo y no existen: se crean
 };
 
 /**

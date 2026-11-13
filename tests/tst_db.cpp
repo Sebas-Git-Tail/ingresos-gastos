@@ -413,6 +413,22 @@ private slots:
         malo.desde = QDate(2026, 1, 1);
         QVERIFY(!c.guardarRecurrente(malo).ok);
     }
+
+    void importarConCuenta()
+    {
+        Cuentas c(":memory:");
+        FilaImportada a = fila({2026, 11, 1}, Tipo::Gasto, "Supermercado", 1000);
+        a.cuenta = "Mercado Pago";
+        FilaImportada b = fila({2026, 11, 2}, Tipo::Gasto, "Supermercado", 2000);     // sin cuenta: la principal
+        const ResultadoImportacion vista = c.previsualizarImportacion({a, b});
+        QCOMPARE(vista.cuentasNuevas, QStringList{"Mercado Pago"});
+        QCOMPARE(c.cuentasDinero().size(), 1);                     // la vista previa no crea nada
+        QCOMPARE(c.importar({a, b}).nuevos, 2);
+        QCOMPARE(c.cuentasDinero().size(), 2);
+        QStringList cuentas;
+        for (const Movimiento& m : c.movimientos()) cuentas << m.cuenta;
+        QCOMPARE(cuentas, (QStringList{"Principal", "Mercado Pago"}));
+    }
 };
 
 QTEST_MAIN(TstDb)

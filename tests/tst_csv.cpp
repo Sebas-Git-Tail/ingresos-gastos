@@ -15,9 +15,9 @@ private slots:
                                              mov({2026, 10, 31}, Tipo::Ingreso, "Sueldo", 85000000, "")});
         const QStringList l = csv.split("\r\n", Qt::SkipEmptyParts);
         QCOMPARE(l.size(), 3);
-        QCOMPARE(l[0], QString("Fecha;Tipo;Categoría;Monto;Descripción"));
-        QCOMPARE(l[1], QString("01/11/2026;Gasto;Supermercado;15430,50;\"Compra; semanal \"\"grande\"\"\""));
-        QCOMPARE(l[2], QString("31/10/2026;Ingreso;Sueldo;850000,00;"));
+        QCOMPARE(l[0], QString("Fecha;Tipo;Categoría;Monto;Descripción;Cuenta"));
+        QCOMPARE(l[1], QString("01/11/2026;Gasto;Supermercado;15430,50;\"Compra; semanal \"\"grande\"\"\";"));
+        QCOMPARE(l[2], QString("31/10/2026;Ingreso;Sueldo;850000,00;;"));
         QVERIFY(csvParaGuardar(csv).startsWith("\xEF\xBB\xBF"));
     }
 
@@ -154,6 +154,16 @@ private slots:
         QCOMPARE(l.filas[0].tipo, Tipo::Gasto);
         QCOMPARE(l.filas[0].monto, Centavos(15050));
         QCOMPARE(l.filas[1].tipo, Tipo::Ingreso);
+    }
+
+    void columnaCuenta()
+    {
+        const LecturaCsv l = leerCsv("Fecha;Tipo;Categoría;Monto;Descripción;Cuenta\r\n01/11/2026;Gasto;Super;100;x;Banco\r\n");
+        QVERIFY(l.ok);
+        QCOMPARE(l.filas.first().cuenta, QString("Banco"));
+        Movimiento m = mov({2026, 11, 1}, Tipo::Gasto, "Super", 100, "x");
+        m.cuenta = "Efectivo";
+        QVERIFY(movimientosACsv({m}).contains(";Efectivo\r\n"));
     }
 };
 

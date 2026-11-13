@@ -7,7 +7,7 @@
 
 namespace {
 
-enum Columna { ColFecha, ColTipo, ColCategoria, ColMonto, ColDescripcion, ColNinguna };
+enum Columna { ColFecha, ColTipo, ColCategoria, ColMonto, ColDescripcion, ColCuenta, ColNinguna };
 
 Columna columnaDeTitulo(const QString& titulo)
 {
@@ -20,6 +20,7 @@ Columna columnaDeTitulo(const QString& titulo)
         || t.startsWith(QLatin1String("cantidad")) || t == QLatin1String("amount")) return ColMonto;
     if (t.startsWith(QLatin1String("descrip")) || t.startsWith(QLatin1String("detalle")) || t.startsWith(QLatin1String("concepto"))
         || t.startsWith(QLatin1String("nota")) || t.startsWith(QLatin1String("comentario")) || t == QLatin1String("note")) return ColDescripcion;
+    if (t == QLatin1String("cuenta") || t == QLatin1String("account") || t.startsWith(QLatin1String("billetera"))) return ColCuenta;
     return ColNinguna;
 }
 
@@ -198,10 +199,10 @@ LecturaCsv leerExpenless(const QString& texto)
 QString movimientosACsv(const QList<Movimiento>& movimientos)
 {
     QStringList lineas;
-    lineas << QStringLiteral("Fecha;Tipo;Categoría;Monto;Descripción");
+    lineas << QStringLiteral("Fecha;Tipo;Categoría;Monto;Descripción;Cuenta");
     for (const Movimiento& m : movimientos) {
         lineas << QStringList{m.fecha.toString(QStringLiteral("dd/MM/yyyy")), textoTipo(m.tipo), campo(m.categoria),
-                              formatearNumero(m.monto), campo(m.descripcion)}
+                              formatearNumero(m.monto), campo(m.descripcion), campo(m.cuenta)}
                       .join(QLatin1Char(';'));
     }
     return lineas.join(QStringLiteral("\r\n")) + QStringLiteral("\r\n");
@@ -311,6 +312,7 @@ LecturaCsv leerCsv(const QString& texto)
             case ColCategoria: fila.categoria = v; break;
             case ColMonto: textoMonto = v; break;
             case ColDescripcion: fila.descripcion = v; break;
+            case ColCuenta: fila.cuenta = v; break;
             case ColNinguna: break;
             }
         }

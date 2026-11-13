@@ -1147,6 +1147,11 @@ ResultadoImportacion Cuentas::procesarImportacion(const QList<FilaImportada>& fi
         ++existentes[claveMovimiento(m.fecha, m.tipo, m.categoria, m.monto, m.descripcion)];
     QHash<QString, int> vistasEnArchivo;
 
+    // Cuentas por nombre (las que nombra el archivo y no están se crean)
+    QHash<QString, qint64> idsCuenta;
+    for (const CuentaDinero& c : cuentasDinero()) idsCuenta.insert(normalizar(c.nombre), c.id);
+    const qint64 cuentaPorDefecto = cuentaVista_ ? cuentaVista_ : cuentaPrincipal();
+
     // Categorías por nombre (las que se vayan creando también)
     QHash<QString, qint64> ids;
     for (const Categoria& c : categorias()) ids.insert(textoBD(c.tipo) + QChar(0x1F) + normalizar(c.nombre), c.id);
@@ -1171,6 +1176,21 @@ ResultadoImportacion Cuentas::procesarImportacion(const QList<FilaImportada>& fi
             idCategoria = guardar ? insertarCategoria(nombreCategoria, f.tipo) : -1;   // en la vista previa alcanza con contarla
             ids.insert(claveCategoria, idCategoria);
         }
+        qint64 idCuenta = cuentaPorDefecto;
+        if (const QString nombreCuenta = f.cuenta.simplified(); !nombreCuenta.isEmpty()) {
+            idCuenta = idsCuenta.value(normalizar(nombreCuenta));
+            if (idCuenta == 0) {
+                r.cuentasNuevas << nombreCuenta;
+                if (guardar) {
+                    QSqlQuery c = consulta(db_, "INSERT INTO cuentas_dinero (uuid, nombre) VALUES (?, ?)", {uuidNuevo(), nombreLibreCuenta(nombreCuenta, 0)});
+                    idCuenta = c.lastInsertId().toLongLong();
+                    marcar("cuentas_dinero", idCuenta);
+                } else {
+                    idCuenta = -1;
+                }
+                idsCuenta.insert(normalizar(nombreCuenta), idCuenta);
+            }
+        }
         if (guardar) {
             // uuid sacado del contenido: si el mismo archivo se importa en la PC y en el celular,
             // al sincronizar son los mismos movimientos y no quedan duplicados
@@ -1178,7 +1198,7 @@ ResultadoImportacion Cuentas::procesarImportacion(const QList<FilaImportada>& fi
             const bool yaEsta = valor(db_, "SELECT COUNT(*) FROM movimientos WHERE uuid = ?", {uuid}).toInt() > 0;
             QSqlQuery q = consulta(db_, "INSERT INTO movimientos (uuid, fecha, categoria_id, monto, descripcion, cuenta_id) VALUES (?, ?, ?, ?, ?, ?)",
                                    {yaEsta ? uuidNuevo() : uuid, fechaBD(f.fecha), idCategoria, f.monto, texto(f.descripcion.trimmed()),
-                                    cuentaVista_ ? cuentaVista_ : cuentaPrincipal()});
+                                    idCuenta});
             marcar("movimientos", q.lastInsertId().toLongLong());
         }
         ++r.nuevos;
