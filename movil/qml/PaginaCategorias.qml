@@ -50,9 +50,11 @@ Page {
                     Rectangle { width: 14; height: 14; radius: 3; color: modelData.color }
                     Label { text: modelData.nombre; font.pixelSize: 15; Layout.fillWidth: true; elide: Text.ElideRight }
                     Label {
-                        text: modelData.movimientos === 1 ? "1 movimiento" : modelData.movimientos + " movimientos"
+                        text: (modelData.movimientos === 1 ? "1 movimiento" : modelData.movimientos + " movimientos")
+                              + (modelData.presupuesto !== "" ? "\nPresupuesto $ " + modelData.presupuesto : "")
                         font.pixelSize: 12
                         color: ventana.tintaApagada
+                        horizontalAlignment: Text.AlignRight
                     }
                 }
             }
@@ -70,6 +72,12 @@ Page {
         id: opciones
         MenuItem { text: "Renombrar"; onTriggered: { campoNombre.text = pagina.elegida.nombre; dialogoNombre.renombrando = true; dialogoNombre.open() } }
         MenuItem { text: "Cambiar color"; onTriggered: dialogoColor.open() }
+        MenuItem {
+            text: "Presupuesto por mes"
+            enabled: pagina.tipo === 1
+            height: enabled ? implicitHeight : 0
+            onTriggered: { campoPresupuesto.text = pagina.elegida.presupuesto; dialogoPresupuesto.open() }
+        }
         MenuItem { text: "Eliminar"; enabled: pagina.lista.length > 1; onTriggered: dialogoEliminar.abrir() }
     }
 
@@ -115,6 +123,21 @@ Page {
                 }
             }
         }
+    }
+
+    Dialog {
+        id: dialogoPresupuesto
+        title: "Presupuesto de «" + pagina.elegida.nombre + "»"
+        modal: true
+        anchors.centerIn: parent
+        width: Math.min(ventana.width - 32, 380)
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        ColumnLayout {
+            anchors.fill: parent
+            Label { Layout.fillWidth: true; wrapMode: Text.WordWrap; text: "¿Cuánto pensás gastar por mes? Vacío = sin presupuesto. Si te pasás, la pantalla principal avisa." }
+            TextField { id: campoPresupuesto; Layout.fillWidth: true; placeholderText: "150.000"; inputMethodHints: Qt.ImhFormattedNumbersOnly }
+        }
+        onAccepted: pagina.mostrar(App.fijarPresupuesto(pagina.elegida.id, campoPresupuesto.text))
     }
 
     Dialog {

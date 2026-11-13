@@ -126,6 +126,7 @@ Page {
         property var idMov
         MenuItem { text: "Editar"; onTriggered: ventana.editar(App.movimiento(menuFila.idMov)) }
         MenuItem { text: "Repetir con fecha de hoy"; onTriggered: ventana.editar(App.repetir(menuFila.idMov)) }
+        MenuItem { text: "Repetir todos los meses"; onTriggered: ventana.editarFijo(App.fijoDesdeMovimiento(menuFila.idMov)) }
         MenuItem { text: "Eliminar"; onTriggered: confirmarBorrar.abrir(menuFila.idMov) }
     }
 

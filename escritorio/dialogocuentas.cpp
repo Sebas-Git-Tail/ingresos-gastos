@@ -41,7 +41,7 @@ void DialogoCuentas::cargar(qint64 elegir)
     t->setRowCount(int(lista.size()));
     for (int i = 0; i < lista.size(); ++i) {
         const CuentaDinero& c = lista[i];
-        auto* nombre = new QTableWidgetItem(c.principal ? tr("%1 (principal)").arg(c.nombre) : c.nombre);
+        auto* nombre = new QTableWidgetItem(c.principal && c.nombre != QLatin1String("Principal") ? tr("%1 (principal)").arg(c.nombre) : c.nombre);
         nombre->setData(Qt::UserRole, c.id);
         nombre->setData(Qt::UserRole + 1, c.nombre);
         nombre->setToolTip(tr("Saldo inicial: %1").arg(formatearPesos(c.saldoInicial)));

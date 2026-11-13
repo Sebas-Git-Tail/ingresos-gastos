@@ -17,6 +17,9 @@ qt_add_qml_module(igmovil
         qml/SelectorFecha.qml
         qml/PaginaCategorias.qml
         qml/PaginaSincronizacion.qml
+        qml/PaginaCuentas.qml
+        qml/PaginaFijos.qml
+        qml/EditorFijo.qml
     SOURCES
         controlador.h controlador.cpp
         modelomovimientos.h modelomovimientos.cpp

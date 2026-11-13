@@ -62,6 +62,12 @@ class Controlador : public QObject
     Q_PROPERTY(int puertoPorDefecto READ puertoPorDefecto CONSTANT)
     Q_PROPERTY(QString version READ version CONSTANT)
     Q_PROPERTY(QString rutaBase READ rutaBase CONSTANT)
+    // ---- 2.1.0: cuentas, presupuestos y movimientos fijos
+    Q_PROPERTY(QVariantList cuentas READ cuentas NOTIFY cambio)           // [{id, nombre, saldo, saldoInicial, principal, movimientos}]
+    Q_PROPERTY(qint64 cuentaVista READ cuentaVista WRITE setCuentaVista NOTIFY cambio)   // 0 = todas
+    Q_PROPERTY(QVariantList presupuestos READ presupuestos NOTIFY cambio) // del mes que se mira: [{nombre, gastado, presupuesto, porcentaje, pasado}]
+    Q_PROPERTY(QString avisoPresupuesto READ avisoPresupuesto NOTIFY cambio)
+    Q_PROPERTY(QVariantList fijos READ fijos NOTIFY cambio)
 
 public:
     explicit Controlador(Cuentas& cuentas, QObject* parent = nullptr);
@@ -105,6 +111,29 @@ public:
     int puertoPorDefecto() const;
     QString version() const;
     QString rutaBase() const { return cuentas_.ruta(); }
+    QVariantList cuentas() const;
+    qint64 cuentaVista() const { return cuentas_.cuentaVista(); }
+    void setCuentaVista(qint64 id);
+    QVariantList presupuestos() const;
+    QString avisoPresupuesto() const;
+    QVariantList fijos() const;
+
+    // ---- cuentas. Los que devuelven QString dan "" si salió bien; si no, el error
+    Q_INVOKABLE QVariantMap crearCuenta(const QString& nombre, const QString& saldoInicial);   // {ok, error, id}
+    Q_INVOKABLE QString renombrarCuenta(qint64 id, const QString& nombre);
+    Q_INVOKABLE QString fijarSaldoInicialCuenta(qint64 id, const QString& texto);
+    Q_INVOKABLE QString eliminarCuenta(qint64 id, qint64 moverA);
+
+    // ---- presupuestos
+    Q_INVOKABLE QString fijarPresupuesto(qint64 categoriaId, const QString& texto);   // vacío o 0 = sin presupuesto
+
+    // ---- movimientos fijos
+    Q_INVOKABLE QVariantMap nuevoFijo(int tipo) const;
+    Q_INVOKABLE QVariantMap fijo(qint64 id) const;
+    Q_INVOKABLE QVariantMap fijoDesdeMovimiento(qint64 idMovimiento) const;   // «Repetir todos los meses»
+    Q_INVOKABLE QString guardarFijo(const QVariantMap& datos);
+    Q_INVOKABLE QString eliminarFijo(qint64 id);
+    Q_INVOKABLE int cargarFijos();                     // carga los que correspondan hasta hoy (al abrir y al volver a la app)
 
     QPair<QDate, QDate> rango() const;
     QDate periodo() const { return periodo_; }

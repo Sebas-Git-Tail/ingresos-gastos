@@ -1,6 +1,7 @@
 // Pruebas de la app del celular: el controlador, la sincronización contra una «PC» y las pantallas QML.
 // Con IG_CAPTURAS=/carpeta guarda capturas de cada pantalla (para mirarlas).
 #include "controlador.h"
+#include "dinero.h"
 #include "db.h"
 #include "graficosquick.h"
 #include "sincronizacion.h"
@@ -325,9 +326,54 @@ private slots:
         QMetaObject::invokeMethod(ventana, "abrir", Q_ARG(QVariant, QVariant("sinc")));
         capturar("6-sincronizar");
 
+        // 2.1.0: con dos cuentas aparecen los selectores; presupuesto pasado y movimientos fijos
+        QVERIFY(c.crearCuenta("Banco", "1.000").value("ok").toBool());
+        QCOMPARE(c.fijarPresupuesto(c.categoriaInicial(1), "1"), QString());
+        QVariantMap gasto = c.nuevoMovimiento(1);
+        gasto.insert("monto", "50");
+        QCOMPARE(c.guardarMovimiento(gasto), QString());
+        QVERIFY(!c.avisoPresupuesto().isEmpty());
+        QMetaObject::invokeMethod(ventana, "abrir", Q_ARG(QVariant, QVariant("cuentas")));
+        capturar("7-cuentas");
+        QMetaObject::invokeMethod(ventana, "abrir", Q_ARG(QVariant, QVariant("fijos")));
+        capturar("8-fijos");
+        QMetaObject::invokeMethod(ventana, "editarFijo", Q_ARG(QVariant, QVariant(c.nuevoFijo(1))));
+        capturar("9-nuevo-fijo");
+        QMetaObject::invokeMethod(ventana, "editar", Q_ARG(QVariant, QVariant(c.nuevoMovimiento(1))));
+        capturar("10-gasto-con-cuenta");
+
         // Las advertencias de QML son errores de verdad (propiedad mal escrita, tipo que no existe...)
         QVERIFY2(advertencias.isEmpty(), qPrintable(advertencias.join('\n')));
         Controlador::setInstancia(nullptr);
+    }
+
+    void cuentasYFijosDesdeElCelular()
+    {
+        Cuentas db(":memory:");
+        Controlador c(db);
+        QCOMPARE(c.cuentas().size(), 1);
+        const QVariantMap banco = c.crearCuenta("Banco", "500");
+        QVERIFY(banco.value("ok").toBool());
+        QCOMPARE(c.cuentas().size(), 2);
+        c.setCuentaVista(banco.value("id").toLongLong());
+        QVariantMap m = c.nuevoMovimiento(0);
+        QCOMPARE(m.value("cuentaId").toLongLong(), banco.value("id").toLongLong());   // arranca en la que se mira
+        m.insert("monto", "100");
+        QCOMPARE(c.guardarMovimiento(m), QString());
+        QCOMPARE(c.saldoTexto(), formatearPesos(50000 + 10000));
+        c.setCuentaVista(0);
+
+        QVariantMap f = c.nuevoFijo(1);
+        f.insert("monto", "2.000");
+        f.insert("dia", 1);
+        f.insert("desdeIso", QDate::currentDate().addMonths(-1).toString(Qt::ISODate));
+        QCOMPARE(c.guardarFijo(f), QString());
+        QCOMPARE(c.fijos().size(), 1);
+        QVERIFY(c.cargarFijos() == 0);                              // guardarFijo ya los cargó
+        QCOMPARE(c.eliminarFijo(c.fijos().first().toMap().value("id").toLongLong()), QString());
+        QVERIFY(c.fijos().isEmpty());
+        QCOMPARE(c.eliminarCuenta(banco.value("id").toLongLong(), db.cuentaPrincipal()), QString());
+        QCOMPARE(c.cuentas().size(), 1);
     }
 };
 

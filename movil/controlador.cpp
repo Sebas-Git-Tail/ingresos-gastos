@@ -366,7 +366,8 @@ QVariantMap Controlador::nuevoMovimiento(int tipo) const
     const QDate h = QDate::currentDate();
     const QDate fecha = (!desde.isValid() || (h >= desde && h <= hasta)) ? h : desde;
     return QVariantMap{{"id", 0}, {"tipo", tipo}, {"fechaIso", fecha.toString(Qt::ISODate)}, {"fechaTexto", fechaTexto(fecha.toString(Qt::ISODate))},
-                       {"categoriaId", categoriaInicial(tipo)}, {"monto", QString()}, {"descripcion", QString()}};
+                       {"categoriaId", categoriaInicial(tipo)}, {"monto", QString()}, {"descripcion", QString()},
+                       {"cuentaId", cuentas_.cuentaVista() ? cuentas_.cuentaVista() : cuentas_.cuentaPrincipal()}};
 }
 
 QVariantMap Controlador::movimiento(qint64 id) const
@@ -375,7 +376,7 @@ QVariantMap Controlador::movimiento(qint64 id) const
     if (!m) return {};
     return QVariantMap{{"id", m->id}, {"tipo", m->tipo == Tipo::Ingreso ? 0 : 1}, {"fechaIso", m->fecha.toString(Qt::ISODate)},
                        {"fechaTexto", fechaTexto(m->fecha.toString(Qt::ISODate))}, {"categoriaId", m->categoriaId},
-                       {"monto", formatearPesos(m->monto).mid(2)}, {"descripcion", m->descripcion}};
+                       {"monto", formatearPesos(m->monto).mid(2)}, {"descripcion", m->descripcion}, {"cuentaId", m->cuentaId}};
 }
 
 QVariantMap Controlador::repetir(qint64 id) const
@@ -400,6 +401,7 @@ QString Controlador::guardarMovimiento(const QVariantMap& datos)
     m.categoriaId = datos.value(QStringLiteral("categoriaId")).toLongLong();
     m.monto = monto;
     m.descripcion = datos.value(QStringLiteral("descripcion")).toString().trimmed();
+    m.cuentaId = datos.value(QStringLiteral("cuentaId")).toLongLong();
     const auto cat = cuentas_.categoria(m.categoriaId);
     if (!cat || cat->tipo != m.tipo) return QStringLiteral("Elegí una categoría.");
     const Resultado r = m.id ? cuentas_.actualizarMovimiento(m) : cuentas_.crearMovimiento(m);
@@ -432,7 +434,8 @@ QVariantList Controlador::categorias(int tipo) const
     QVariantList l;
     for (const Categoria& c : cuentas_.categorias(tipo == 0 ? Tipo::Ingreso : Tipo::Gasto))
         l << QVariantMap{{"id", c.id}, {"nombre", c.nombre}, {"color", tema.serie[std::clamp(c.color, 0, 7)]},
-                         {"colorIndice", c.color}, {"movimientos", c.movimientos}};
+                         {"colorIndice", c.color}, {"movimientos", c.movimientos},
+                         {"presupuesto", c.presupuesto > 0 ? formatearPesos(c.presupuesto).mid(2) : QString()}};
     return l;
 }
 
@@ -668,4 +671,178 @@ void Controlador::olvidarPc()
     for (const Par& p : cuentas_.pares()) cuentas_.eliminarPar(p.dispositivo);
     estadoSinc_.clear();
     emit sincCambio();
+}
+
+// ---------------------------------------------------------------- cuentas
+
+QVariantList Controlador::cuentas() const
+{
+    QVariantList l;
+    for (const CuentaDinero& c : cuentas_.cuentasDinero())
+        l << QVariantMap{{"id", c.id}, {"nombre", c.nombre}, {"saldo", formatearPesos(c.saldo)},
+                         {"saldoInicial", formatearPesos(c.saldoInicial).mid(2)}, {"principal", c.principal}, {"movimientos", c.movimientos}};
+    return l;
+}
+
+void Controlador::setCuentaVista(qint64 id)
+{
+    if (id == cuentas_.cuentaVista()) return;
+    cuentas_.verCuenta(id);
+    refrescar();
+}
+
+QVariantMap Controlador::crearCuenta(const QString& nombre, const QString& saldoInicial)
+{
+    Centavos saldo = 0;
+    if (!saldoInicial.trimmed().isEmpty() && !parsearPesos(saldoInicial, &saldo, true))
+        return QVariantMap{{"ok", false}, {"error", QStringLiteral("«%1» no es un monto válido.").arg(saldoInicial)}, {"id", 0}};
+    const Resultado r = cuentas_.crearCuentaDinero(nombre, saldo);
+    if (r.ok) { refrescar(); programarSincronizacion(); }
+    return QVariantMap{{"ok", r.ok}, {"error", r.error}, {"id", r.id}};
+}
+
+QString Controlador::renombrarCuenta(qint64 id, const QString& nombre)
+{
+    const Resultado r = cuentas_.renombrarCuentaDinero(id, nombre);
+    if (r.ok) { refrescar(); programarSincronizacion(); }
+    return r.error;
+}
+
+QString Controlador::fijarSaldoInicialCuenta(qint64 id, const QString& texto)
+{
+    Centavos c = 0;
+    if (!texto.trimmed().isEmpty() && !parsearPesos(texto, &c, true)) return QStringLiteral("«%1» no es un monto válido.").arg(texto);
+    const Resultado r = cuentas_.fijarSaldoInicialCuenta(id, c);
+    if (r.ok) { refrescar(); programarSincronizacion(); }
+    return r.error;
+}
+
+QString Controlador::eliminarCuenta(qint64 id, qint64 moverA)
+{
+    const Resultado r = cuentas_.eliminarCuentaDinero(id, moverA);
+    if (r.ok) { refrescar(); programarSincronizacion(); }
+    return r.error;
+}
+
+// ---------------------------------------------------------------- presupuestos
+
+QVariantList Controlador::presupuestos() const
+{
+    const QDate mes = vista_ == 0 ? periodo_ : QDate::currentDate();
+    QVariantList l;
+    for (const EstadoPresupuesto& p : cuentas_.presupuestos(mes.year(), mes.month()))
+        l << QVariantMap{{"nombre", p.nombre}, {"gastado", formatearPesos(p.gastado)}, {"presupuesto", formatearPesos(p.presupuesto)},
+                         {"porcentaje", p.porcentaje()}, {"pasado", p.gastado > p.presupuesto}};
+    return l;
+}
+
+QString Controlador::avisoPresupuesto() const
+{
+    const QDate mes = vista_ == 0 ? periodo_ : QDate::currentDate();
+    QStringList pasados;
+    for (const EstadoPresupuesto& p : cuentas_.presupuestos(mes.year(), mes.month()))
+        if (p.gastado > p.presupuesto) pasados << QStringLiteral("%1 (%2 %)").arg(p.nombre).arg(p.porcentaje());
+    return pasados.isEmpty() ? QString() : QStringLiteral("Te pasaste del presupuesto: ") + pasados.join(QStringLiteral(", "));
+}
+
+QString Controlador::fijarPresupuesto(qint64 categoriaId, const QString& texto)
+{
+    Centavos c = 0;
+    if (!texto.trimmed().isEmpty() && !parsearPesos(texto, &c)) return QStringLiteral("«%1» no es un monto válido.").arg(texto);
+    const Resultado r = cuentas_.fijarPresupuesto(categoriaId, c);
+    if (r.ok) { refrescar(); programarSincronizacion(); }
+    return r.error;
+}
+
+// ---------------------------------------------------------------- movimientos fijos
+
+namespace {
+QVariantMap mapaFijo(const Recurrente& r)
+{
+    return QVariantMap{{"id", r.id}, {"tipo", r.tipo == Tipo::Ingreso ? 0 : 1}, {"categoriaId", r.categoriaId}, {"categoria", r.categoria},
+                       {"cuentaId", r.cuentaId}, {"cuenta", r.cuenta}, {"monto", r.monto > 0 ? formatearPesos(r.monto).mid(2) : QString()},
+                       {"montoTexto", (r.tipo == Tipo::Ingreso ? QStringLiteral("+") : QStringLiteral("−")) + formatearPesos(r.monto)},
+                       {"descripcion", r.descripcion}, {"dia", r.dia}, {"desdeIso", r.desde.toString(Qt::ISODate)},
+                       {"hastaIso", r.hasta.isValid() ? r.hasta.toString(Qt::ISODate) : QString()}, {"activo", r.activo}};
+}
+}
+
+QVariantList Controlador::fijos() const
+{
+    QVariantList l;
+    for (const Recurrente& r : cuentas_.recurrentes()) l << mapaFijo(r);
+    return l;
+}
+
+QVariantMap Controlador::nuevoFijo(int tipo) const
+{
+    Recurrente r;
+    r.tipo = tipo == 0 ? Tipo::Ingreso : Tipo::Gasto;
+    r.categoriaId = categoriaInicial(tipo);
+    r.cuentaId = cuentas_.cuentaVista() ? cuentas_.cuentaVista() : cuentas_.cuentaPrincipal();
+    r.dia = QDate::currentDate().day();
+    r.desde = QDate::currentDate();
+    return mapaFijo(r);
+}
+
+QVariantMap Controlador::fijo(qint64 id) const
+{
+    for (const Recurrente& r : cuentas_.recurrentes()) if (r.id == id) return mapaFijo(r);
+    return {};
+}
+
+QVariantMap Controlador::fijoDesdeMovimiento(qint64 idMovimiento) const
+{
+    const auto m = cuentas_.movimiento(idMovimiento);
+    if (!m) return {};
+    Recurrente r;
+    r.tipo = m->tipo;
+    r.categoriaId = m->categoriaId;
+    r.cuentaId = m->cuentaId;
+    r.monto = m->monto;
+    r.descripcion = m->descripcion;
+    r.dia = m->fecha.day();
+    r.desde = m->fecha.addMonths(1);          // ese mes ya está cargado
+    return mapaFijo(r);
+}
+
+QString Controlador::guardarFijo(const QVariantMap& datos)
+{
+    Centavos monto = 0;
+    if (!parsearPesos(datos.value(QStringLiteral("monto")).toString(), &monto) || monto <= 0)
+        return QStringLiteral("Escribí un monto mayor que cero, por ejemplo 15.430,50");
+    Recurrente r;
+    r.id = datos.value(QStringLiteral("id")).toLongLong();
+    r.categoriaId = datos.value(QStringLiteral("categoriaId")).toLongLong();
+    r.cuentaId = datos.value(QStringLiteral("cuentaId")).toLongLong();
+    r.monto = monto;
+    r.descripcion = datos.value(QStringLiteral("descripcion")).toString().trimmed();
+    r.dia = datos.value(QStringLiteral("dia")).toInt();
+    r.desde = QDate::fromString(datos.value(QStringLiteral("desdeIso")).toString(), Qt::ISODate);
+    r.hasta = QDate::fromString(datos.value(QStringLiteral("hastaIso")).toString(), Qt::ISODate);
+    r.activo = datos.value(QStringLiteral("activo"), true).toBool();
+    const Resultado res = cuentas_.guardarRecurrente(r);
+    if (!res.ok) return res.error;
+    cargarFijos();
+    refrescar();
+    programarSincronizacion();
+    return QString();
+}
+
+QString Controlador::eliminarFijo(qint64 id)
+{
+    const Resultado r = cuentas_.eliminarRecurrente(id);
+    if (r.ok) { refrescar(); programarSincronizacion(); }
+    return r.error;
+}
+
+int Controlador::cargarFijos()
+{
+    const int n = cuentas_.generarRecurrentes();
+    if (n > 0) {
+        refrescar();
+        emit aviso(n == 1 ? QStringLiteral("Se cargó 1 movimiento fijo") : QStringLiteral("Se cargaron %1 movimientos fijos").arg(n));
+        programarSincronizacion();
+    }
+    return n;
 }

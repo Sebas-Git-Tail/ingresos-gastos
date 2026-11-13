@@ -26,6 +26,7 @@ Page {
         campoMonto.text = datos.monto || ""
         campoDescripcion.text = datos.descripcion || ""
         cargarCategorias(datos.categoriaId)
+        comboCuenta.currentIndex = Math.max(0, App.cuentas.findIndex(c => c.id === datos.cuentaId))
         if (nuevo) campoMonto.forceActiveFocus()
     }
     onTipoChanged: if (comboCategoria.model !== undefined) cargarCategorias(-1)
@@ -125,6 +126,17 @@ Page {
                 placeholderText: "Opcional"
             }
 
+            // Con una sola cuenta no hace falta elegir
+            Label { text: "Cuenta"; color: ventana.tintaSecundaria; visible: App.cuentas.length > 1 }
+            ComboBox {
+                id: comboCuenta
+                Layout.fillWidth: true
+                visible: App.cuentas.length > 1
+                model: App.cuentas
+                textRole: "nombre"
+                valueRole: "id"
+            }
+
             Label {
                 id: error
                 Layout.fillWidth: true
@@ -145,7 +157,8 @@ Page {
                         fechaIso: editor.fechaIso,
                         categoriaId: comboCategoria.currentValue !== undefined ? comboCategoria.currentValue : 0,
                         monto: campoMonto.text,
-                        descripcion: campoDescripcion.text
+                        descripcion: campoDescripcion.text,
+                        cuentaId: comboCuenta.currentValue !== undefined ? comboCuenta.currentValue : 0
                     })
                     if (e === "") pila.pop()
                     else error.text = e

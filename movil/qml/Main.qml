@@ -39,10 +39,10 @@ ApplicationWindow {
     Connections {
         target: Qt.application
         function onStateChanged() {
-            if (Qt.application.state === Qt.ApplicationActive) App.sincronizarSiCorresponde()
+            if (Qt.application.state === Qt.ApplicationActive) { App.cargarFijos(); App.sincronizarSiCorresponde() }
         }
     }
-    Timer { interval: 1500; running: true; onTriggered: App.sincronizarSiCorresponde() }
+    Timer { interval: 1500; running: true; onTriggered: { App.cargarFijos(); App.sincronizarSiCorresponde() } }
 
     // Mensajito abajo («Gasto guardado», «Sincronizado…»)
     function avisar(texto) { aviso.texto = texto; aviso.open() }
@@ -118,7 +118,9 @@ ApplicationWindow {
             }
             Repeater {
                 model: [
-                    { texto: "Categorías", accion: "categorias" },
+                    { texto: "Categorías y presupuestos", accion: "categorias" },
+                    { texto: "Cuentas", accion: "cuentas" },
+                    { texto: "Movimientos fijos", accion: "fijos" },
                     { texto: "Saldo inicial", accion: "saldo" },
                     { texto: "Importar CSV (también de ExpenLess)", accion: "importar" },
                     { texto: "Exportar CSV", accion: "exportar" },
@@ -143,6 +145,8 @@ ApplicationWindow {
         else if (accion === "exportar") { elegirExportar.selectedFile = elegirExportar.currentFolder + "/" + App.nombreExportacion(); elegirExportar.open() }
         else if (accion === "backup") { elegirBackup.selectedFile = elegirBackup.currentFolder + "/" + App.nombreBackup(); elegirBackup.open() }
         else if (accion === "sinc") pila.push(paginaSinc)
+        else if (accion === "cuentas") pila.push(paginaCuentas)
+        else if (accion === "fijos") pila.push(paginaFijos)
         else if (accion === "acerca") acerca.open()
     }
 
@@ -170,7 +174,19 @@ ApplicationWindow {
                         spacing: 8
                         RowLayout {
                             Layout.fillWidth: true
-                            Label { text: "Saldo de la cuenta"; color: ventana.tintaSecundaria; Layout.fillWidth: true }
+                            Label { text: App.cuentas.length > 1 ? "Saldo de" : "Saldo de la cuenta"; color: ventana.tintaSecundaria }
+                            // Con más de una cuenta: cuál mirar (o todas)
+                            ComboBox {
+                                id: comboCuentaVista
+                                visible: App.cuentas.length > 1
+                                Layout.fillWidth: true
+                                model: [{ id: 0, nombre: "Todas" }].concat(App.cuentas)
+                                textRole: "nombre"
+                                valueRole: "id"
+                                currentIndex: Math.max(0, model.findIndex(c => c.id === App.cuentaVista))
+                                onActivated: (i) => App.cuentaVista = model[i].id
+                            }
+                            Item { Layout.fillWidth: true; visible: App.cuentas.length <= 1 }
                             Label {
                                 text: App.saldoTexto
                                 font.pixelSize: 24
@@ -186,6 +202,16 @@ ApplicationWindow {
                             Tarjeta { titulo: "Resultado"; valor: App.resultadoTexto; marca: "transparent" }
                         }
                     }
+                }
+
+                // Aviso de presupuesto (tocar abre las categorías, donde se cambia)
+                ItemDelegate {
+                    Layout.fillWidth: true
+                    visible: App.avisoPresupuesto !== ""
+                    text: "⚠ " + App.avisoPresupuesto
+                    onClicked: ventana.abrir("categorias")
+                    background: Rectangle { color: ventana.oscuro ? "#5a2a1a" : "#fde0d0" }
+                    contentItem: Label { text: parent.text; wrapMode: Text.WordWrap }
                 }
 
                 TabBar {
@@ -213,6 +239,10 @@ ApplicationWindow {
     Component { id: editor; EditorMovimiento {} }
     Component { id: paginaCategorias; PaginaCategorias {} }
     Component { id: paginaSinc; PaginaSincronizacion {} }
+    Component { id: paginaCuentas; PaginaCuentas {} }
+    Component { id: paginaFijos; PaginaFijos {} }
+    Component { id: editorFijo; EditorFijo {} }
+    function editarFijo(datos) { if (datos && datos.categoriaId !== undefined) pila.push(editorFijo, { datos: datos }) }
 
     // ---------------------------------------------------------------- saldo inicial
     Dialog {
