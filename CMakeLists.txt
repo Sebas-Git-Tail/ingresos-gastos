@@ -19,17 +19,22 @@ endif()
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Sql Network)
 
+# Código compartido (repo comun-qt, traído con git subtree a comun/): la sincronización cifrada
+# PC ↔ celular, la misma que usa gestor-stock-cpp
+set(COMUN_SINC ON)
+add_subdirectory(comun)
+
 # El núcleo lo comparten las dos versiones: base de datos, CSV, pesos, sincronización y el dibujo de los gráficos
 add_library(igcore STATIC
     nucleo/modelos.h
     nucleo/dinero.h nucleo/dinero.cpp
     nucleo/csv.h nucleo/csv.cpp
     nucleo/db.h nucleo/db.cpp
-    nucleo/sincronizacion.h nucleo/sincronizacion.cpp
+    nucleo/sincronizacion.h
     nucleo/dibujo.h nucleo/dibujo.cpp
 )
 target_include_directories(igcore PUBLIC nucleo)
-target_link_libraries(igcore PUBLIC Qt6::Core Qt6::Gui Qt6::Sql Qt6::Network)
+target_link_libraries(igcore PUBLIC Qt6::Core Qt6::Gui Qt6::Sql Qt6::Network comun_sinc)
 target_compile_definitions(igcore PUBLIC IG_VERSION="${PROJECT_VERSION}")
 if(NOT MSVC)
     target_compile_options(igcore PRIVATE -Wall -Wextra)

@@ -1,4 +1,5 @@
 #pragma once
+#include "base.h"          // Par, ResultadoAplicar y BaseSinc (comun/sinc)
 #include "csv.h"
 #include "modelos.h"
 #include <QDateTime>
@@ -19,28 +20,6 @@ struct ResultadoImportacion {
     QStringList categoriasNuevas;   // "Gasto: Farmacia"
 };
 
-/** Otro dispositivo con el que se sincroniza (en la PC: los celulares; en el celular: la PC). */
-struct Par {
-    QString dispositivo;            // identificador del otro dispositivo
-    QString nombre;                 // "PC de Sebastián", "Celular"
-    QString secreto;                // clave compartida que se acordó al emparejar
-    QString host;                   // (celular) dirección de la PC
-    int puerto = 0;
-    qint64 enviado = 0;             // (celular) hasta qué cambio local ya le mandé
-    qint64 recibido = 0;            // (celular) hasta qué cambio de la PC ya recibí
-    QDateTime ultimaSinc;
-};
-
-struct ResultadoAplicar {
-    bool ok = true;
-    QString error;
-    int aplicadas = 0;              // filas del otro que cambiaron algo acá
-    int ignoradas = 0;              // filas que no se pudieron usar (dato roto)
-    QStringList aceptadas;          // uuids que se tomaron del otro (no hace falta devolvérselos)
-    QStringList ganadorasLocales;   // filas donde la versión de acá es más nueva, o que acá se tuvieron
-                                    // que cambiar (nombre repetido, categoría revivida): hay que mandarlas
-};
-
 /**
  * Base de datos (SQLite) de ingresos y gastos. La usan la versión de escritorio y la del celular.
  *
@@ -51,7 +30,7 @@ struct ResultadoAplicar {
  *   borrado     no se borra de verdad: se marca, así el otro dispositivo se entera
  * Si el mismo dato se cambió en los dos lados, gana el cambio más nuevo.
  */
-class Cuentas
+class Cuentas : public BaseSinc
 {
 public:
     static QString rutaPorDefecto();              // Linux: ~/.local/share/ingresos-gastos/cuentas.db
@@ -59,7 +38,7 @@ public:
     static constexpr int VERSION_ESQUEMA = 2;
 
     explicit Cuentas(const QString& ruta);        // ":memory:" para pruebas
-    ~Cuentas();
+    ~Cuentas() override;
     Cuentas(const Cuentas&) = delete;
     Cuentas& operator=(const Cuentas&) = delete;
 
@@ -102,17 +81,17 @@ public:
     Resultado backup(const QString& destino);
 
     // ---- sincronización
-    QString dispositivo() const { return dispositivo_; }
-    QString nombreDispositivo() const;
+    QString dispositivo() const override { return dispositivo_; }
+    QString nombreDispositivo() const override;
     void setNombreDispositivo(const QString& nombre);
-    qint64 secuencia() const;                                     // último número de cambio local
-    QJsonArray cambiosDesde(qint64 desde) const;                  // todo lo que cambió después de ese número
-    QJsonArray filasPorUuid(const QStringList& uuids) const;
-    ResultadoAplicar aplicarCambios(const QJsonArray& filas);     // lo que mandó el otro (gana lo más nuevo)
+    qint64 secuencia() const override;                                     // último número de cambio local
+    QJsonArray cambiosDesde(qint64 desde) const override;                  // todo lo que cambió después de ese número
+    QJsonArray filasPorUuid(const QStringList& uuids) const override;
+    ResultadoAplicar aplicarCambios(const QJsonArray& filas) override;     // lo que mandó el otro (gana lo más nuevo)
 
     QList<Par> pares() const;
-    std::optional<Par> par(const QString& dispositivo) const;
-    void guardarPar(const Par& p);
+    std::optional<Par> par(const QString& dispositivo) const override;
+    void guardarPar(const Par& p) override;
     void eliminarPar(const QString& dispositivo);
 
     // Mismo nombre y tipo = mismo uuid en todos los dispositivos (así «Supermercado» de la PC
