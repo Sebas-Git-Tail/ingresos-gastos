@@ -11,7 +11,7 @@ add_library(igescritorio STATIC
     ventanaprincipal.h ventanaprincipal.cpp main.ui
 )
 target_include_directories(igescritorio PUBLIC .)
-target_link_libraries(igescritorio PUBLIC igcore Qt6::Widgets)
+target_link_libraries(igescritorio PUBLIC igcore Qt6::Widgets comun_apps_widgets)
 target_compile_options(igescritorio PRIVATE -Wall -Wextra)
 
 add_executable(ingresos-gastos main.cpp)

@@ -17,6 +17,7 @@
 #include <QHeaderView>
 #include <QInputDialog>
 #include <QMenu>
+#include "PanelApps.h"
 #include <QMessageBox>
 #include <QPainter>
 #include <QSaveFile>
@@ -249,6 +250,8 @@ void VentanaPrincipal::armarMenu()
     menu->addSeparator();
     menu->addAction(ui->actionSincronizar);
     menu->addSeparator();
+    // Actualizar esta app e instalar las otras (comun/apps)
+    menu->addAction(tr("Apps y actualizaciones…"), this, [this] { (new apps::DialogoApps(QStringLiteral("ingresos-gastos"), this))->show(); });
     menu->addAction(ui->actionAcerca);
     QAction* salir = menu->addAction(QIcon::fromTheme(QStringLiteral("application-exit")), tr("Salir"));
     salir->setShortcut(QKeySequence::Quit);

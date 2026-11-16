@@ -4,6 +4,7 @@
 #include "dinero.h"
 #include "db.h"
 #include "graficosquick.h"
+#include "ModeloApps.h"
 #include "sincronizacion.h"
 #include <QPalette>
 #include <QQmlApplicationEngine>
@@ -269,6 +270,10 @@ private slots:
         }
         QStringList advertencias;
         QQmlApplicationEngine engine;
+        // «Apps y actualizaciones» como en main.cpp, pero sin salir a internet
+        qputenv("COMUN_APPS_SIN_RED", "1");
+        apps::ModeloApps modeloApps(QStringLiteral("ingresos-gastos"));
+        engine.rootContext()->setContextProperty(QStringLiteral("Apps"), &modeloApps);
         connect(&engine, &QQmlEngine::warnings, this, [&](const QList<QQmlError>& l) { for (const auto& e : l) advertencias << e.toString(); });
         engine.addImportPath("qrc:/");
         engine.load(QUrl("qrc:/IngresosGastos/qml/Main.qml"));
@@ -341,6 +346,8 @@ private slots:
         capturar("9-nuevo-fijo");
         QMetaObject::invokeMethod(ventana, "editar", Q_ARG(QVariant, QVariant(c.nuevoMovimiento(1))));
         capturar("10-gasto-con-cuenta");
+        QMetaObject::invokeMethod(ventana, "abrir", Q_ARG(QVariant, QVariant("apps")));
+        capturar("11-apps");
 
         // Las advertencias de QML son errores de verdad (propiedad mal escrita, tipo que no existe...)
         QVERIFY2(advertencias.isEmpty(), qPrintable(advertencias.join('\n')));

@@ -129,6 +129,7 @@ ApplicationWindow {
                     { texto: "Exportar CSV", accion: "exportar" },
                     { texto: "Copia de seguridad", accion: "backup" },
                     { texto: "Sincronizar con la PC", accion: "sinc" },
+                    { texto: "Apps y actualizaciones", accion: "apps" },
                     { texto: "Acerca de", accion: "acerca" }
                 ]
                 ItemDelegate {
@@ -150,6 +151,7 @@ ApplicationWindow {
         else if (accion === "sinc") pila.push(paginaSinc)
         else if (accion === "cuentas") pila.push(paginaCuentas)
         else if (accion === "fijos") pila.push(paginaFijos)
+        else if (accion === "apps") pila.push(paginaApps)
         else if (accion === "acerca") acerca.open()
     }
 
@@ -249,6 +251,28 @@ ApplicationWindow {
     Component { id: paginaCuentas; PaginaCuentas {} }
     Component { id: paginaFijos; PaginaFijos {} }
     Component { id: editorFijo; EditorFijo {} }
+    Component { id: paginaApps; PaginaApps {} }
+
+    // Versión nueva de la app (se busca una vez por día): pregunta y abre el instalador de Android
+    Timer { interval: 4000; running: true; onTriggered: Apps.buscarActualizacion(false) }
+    Connections {
+        target: Apps
+        function onVersionNuevaCambio() { if (Apps.versionNueva !== "" && pila.depth === 1) dialogoVersion.open() }
+    }
+    Dialog {
+        id: dialogoVersion
+        title: "Versión nueva"
+        anchors.centerIn: parent
+        width: Math.min(ventana.width - 48, 360)
+        modal: true
+        standardButtons: Dialog.Yes | Dialog.No
+        Label {
+            width: parent.width
+            wrapMode: Text.WordWrap
+            text: "Hay una versión nueva de Ingresos y Gastos: la " + Apps.versionNueva + " (tenés la " + Apps.versionPropia + ").\n\n¿La instalo ahora?"
+        }
+        onAccepted: { Apps.actualizarEstaApp(); pila.push(paginaApps) }
+    }
     function editarFijo(datos) { if (datos && datos.categoriaId !== undefined) pila.push(editorFijo, { datos: datos }) }
 
     // ---------------------------------------------------------------- saldo inicial
