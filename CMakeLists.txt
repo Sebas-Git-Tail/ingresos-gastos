@@ -29,7 +29,7 @@ add_library(igcore STATIC
     nucleo/modelos.h
     nucleo/dinero.h nucleo/dinero.cpp
     nucleo/csv.h nucleo/csv.cpp
-    nucleo/db.h nucleo/db.cpp
+    nucleo/db.h nucleo/db.cpp nucleo/db_interno.h nucleo/db_operaciones.cpp nucleo/db_importacion.cpp nucleo/db_sinc.cpp
     nucleo/sincronizacion.h
     nucleo/dibujo.h nucleo/dibujo.cpp
 )
