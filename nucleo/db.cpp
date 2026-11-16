@@ -484,6 +484,9 @@ QList<Categoria> Cuentas::categorias(std::optional<Tipo> tipo) const
 // sería «Gastos Varios» / «Ingresos Varios», que quedan como opción y no como valor inicial.
 qint64 Cuentas::categoriaInicial(Tipo tipo) const
 {
+    // Pedido del usuario: los ingresos nuevos arrancan en «Propinas Ariel» si existe
+    if (tipo == Tipo::Ingreso)
+        if (const auto propinas = buscarCategoria(QStringLiteral("Propinas Ariel"), Tipo::Ingreso)) return propinas->id;
     try {
         return valor(db_, "SELECT MIN(id) FROM categorias WHERE borrado = 0 AND tipo = ?", {textoBD(tipo)}).toLongLong();   // sin ninguna: NULL, o sea 0
     } catch (const std::exception&) {

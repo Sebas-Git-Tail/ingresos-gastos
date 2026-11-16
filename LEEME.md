@@ -142,6 +142,8 @@ Al importar también acepta `,` o tabulación como separador, columnas en otro o
 guardados por Excel en Windows. Si no hay columna *Tipo*, un monto negativo se toma como gasto.
 
 ## Versiones
+**2.1.2** — Al cargar un ingreso nuevo (o un movimiento fijo), la categoría ya viene elegida en «Propinas Ariel».
+
 **2.1.1** — «Propinas Ariel» aparece primera en la lista de categorías de ingresos (en la PC y en el celular);
 las demás siguen por orden alfabético. No cambia la base ni la sincronización.
 

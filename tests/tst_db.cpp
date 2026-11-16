@@ -80,6 +80,9 @@ private slots:
         gastos = nombres(Tipo::Gasto);
         QCOMPARE(gastos.indexOf("Propinas Ariel"), gastos.indexOf("Obra social Carina") + 1);
         QCOMPARE(c.categorias().first().nombre, QString("Propinas Ariel"));
+        // y un ingreso nuevo arranca en ella; los gastos siguen en la de siempre
+        QCOMPARE(c.categoriaInicial(Tipo::Ingreso), idDe(c, "Propinas Ariel", Tipo::Ingreso));
+        QCOMPARE(c.categoriaInicial(Tipo::Gasto), idDe(c, "Supermercado", Tipo::Gasto));
     }
 
     void movimientoNuevoArrancaEnLaCategoriaDeSiempreYNoEnLaPrimeraDeLaLista()

@@ -49,7 +49,7 @@ public:
 
     // ---- categorías
     QList<Categoria> categorias(std::optional<Tipo> tipo = std::nullopt) const;   // ingresos primero, cada tipo por orden alfabético; con la cantidad de movimientos
-    qint64 categoriaInicial(Tipo tipo) const;                   // con la que arranca un movimiento nuevo (la más antigua); 0 si no hay
+    qint64 categoriaInicial(Tipo tipo) const;                   // con la que arranca un movimiento nuevo (ingresos: «Propinas Ariel» si existe; si no, la más antigua); 0 si no hay
     std::optional<Categoria> categoria(qint64 id) const;
     std::optional<Categoria> buscarCategoria(const QString& nombre, Tipo tipo) const;   // sin importar mayúsculas
     Resultado crearCategoria(const QString& nombre, Tipo tipo);
