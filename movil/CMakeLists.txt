@@ -1,4 +1,4 @@
-find_package(Qt6 6.4 REQUIRED COMPONENTS Quick QuickControls2)
+find_package(Qt6 6.4 REQUIRED COMPONENTS Quick QuickControls2 Svg)   # Svg: los íconos de la barra
 
 # Todo menos main(): así las pruebas usan el mismo código que la app
 qt_add_library(igmovil STATIC)
@@ -20,13 +20,19 @@ qt_add_qml_module(igmovil
         qml/PaginaCuentas.qml
         qml/PaginaFijos.qml
         qml/EditorFijo.qml
+    RESOURCES
+        iconos/menu.svg
+        iconos/desplegar.svg
+        iconos/sincronizar.svg
+        iconos/eliminar.svg
+        iconos/aviso.svg
     SOURCES
         controlador.h controlador.cpp
         modelomovimientos.h modelomovimientos.cpp
         graficosquick.h graficosquick.cpp
 )
 target_include_directories(igmovil PUBLIC .)
-target_link_libraries(igmovil PUBLIC igcore Qt6::Quick Qt6::QuickControls2)
+target_link_libraries(igmovil PUBLIC igcore Qt6::Quick Qt6::QuickControls2 Qt6::Svg)
 
 qt_add_executable(ingresos-gastos-movil main.cpp)
 target_link_libraries(ingresos-gastos-movil PRIVATE igmovil igmovilplugin)

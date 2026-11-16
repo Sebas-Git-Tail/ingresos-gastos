@@ -85,7 +85,7 @@ Page {
                 Label {
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
-                    text: "1. En la PC, abrí Ingresos y Gastos → menú ☰ → «Sincronizar con el celular…» → «Mostrar código».\n"
+                    text: "1. En la PC, abrí Ingresos y Gastos → menú (las tres rayitas) → «Sincronizar con el celular…» → «Mostrar código».\n"
                           + "2. Elegí la PC acá abajo (o escribí su dirección).\n3. Escribí el código de 6 números."
                 }
                 RowLayout {

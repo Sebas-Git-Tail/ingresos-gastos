@@ -1,5 +1,5 @@
 // Ventana principal del celular: período arriba, saldo y tarjetas, y tres pestañas
-// (Movimientos, Gráficos, Totales). El menú ☰ abre lo demás.
+// (Movimientos, Gráficos, Totales). El menú (☰, tres rayitas) abre lo demás.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
@@ -73,13 +73,16 @@ ApplicationWindow {
         RowLayout {
             anchors.fill: parent
             spacing: 0
-            ToolButton { text: "☰"; font.pixelSize: 22; onClicked: menu.open(); Accessible.name: "Menú" }
+            ToolButton { icon.source: "qrc:/IngresosGastos/iconos/menu.svg"; onClicked: menu.open(); Accessible.name: "Menú" }   // íconos SVG: algunos celulares (Samsung) no tienen ☰ ▾ ⟳ en la fuente
             ToolButton { text: "‹"; font.pixelSize: 28; enabled: App.navegable; onClicked: App.anterior(); Accessible.name: "Anterior" }
             ToolButton {
                 Layout.fillWidth: true
-                text: App.periodoTexto + "  ▾"
+                text: App.periodoTexto
                 font.pixelSize: 18
                 font.bold: true
+                icon.source: "qrc:/IngresosGastos/iconos/desplegar.svg"
+                LayoutMirroring.enabled: true           // la flechita a la derecha del texto
+                LayoutMirroring.childrenInherit: true
                 onClicked: menuVista.open()
                 Menu {
                     id: menuVista
@@ -93,8 +96,8 @@ ApplicationWindow {
             }
             ToolButton { text: "›"; font.pixelSize: 28; enabled: App.navegable; onClicked: App.siguiente(); Accessible.name: "Siguiente" }
             ToolButton {
-                text: App.sincronizando ? "⟳…" : "⟳"
-                font.pixelSize: 20
+                icon.source: "qrc:/IngresosGastos/iconos/sincronizar.svg"
+                opacity: App.sincronizando ? 0.5 : 1
                 visible: App.pcEmparejada
                 enabled: !App.sincronizando
                 onClicked: App.sincronizar()
@@ -208,10 +211,14 @@ ApplicationWindow {
                 ItemDelegate {
                     Layout.fillWidth: true
                     visible: App.avisoPresupuesto !== ""
-                    text: "⚠ " + App.avisoPresupuesto
+                    text: App.avisoPresupuesto
                     onClicked: ventana.abrir("categorias")
                     background: Rectangle { color: ventana.oscuro ? "#5a2a1a" : "#fde0d0" }
-                    contentItem: Label { text: parent.text; wrapMode: Text.WordWrap }
+                    contentItem: RowLayout {
+                        spacing: 8
+                        Image { source: "qrc:/IngresosGastos/iconos/aviso.svg"; sourceSize: Qt.size(20, 20); Layout.alignment: Qt.AlignTop }
+                        Label { text: App.avisoPresupuesto; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+                    }
                 }
 
                 TabBar {

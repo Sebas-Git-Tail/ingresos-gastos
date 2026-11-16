@@ -43,8 +43,7 @@ Page {
                 onClicked: pila.replace(editor, { datos: App.repetir(editor.datos.id) })
             }
             ToolButton {
-                text: "🗑"
-                font.pixelSize: 20
+                icon.source: "qrc:/IngresosGastos/iconos/eliminar.svg"
                 visible: !editor.nuevo
                 onClicked: confirmar.open()
                 Accessible.name: "Eliminar"
