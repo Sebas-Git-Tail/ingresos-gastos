@@ -204,6 +204,11 @@ void ordenarCategorias(QList<Categoria>& lista)
     for (const Categoria& c : std::as_const(lista)) claves.insert(c.id, claveOrden(c.nombre));
     std::sort(lista.begin(), lista.end(), [&claves](const Categoria& a, const Categoria& b) {
         if (a.tipo != b.tipo) return a.tipo == Tipo::Ingreso;
+        // Pedido del usuario: «Propinas Ariel» va primera entre los ingresos, antes del orden alfabético
+        static const QString fijada = claveOrden(QStringLiteral("Propinas Ariel"));
+        const bool fa = a.tipo == Tipo::Ingreso && claves.value(a.id) == fijada;
+        const bool fb = b.tipo == Tipo::Ingreso && claves.value(b.id) == fijada;
+        if (fa != fb) return fa;
         const QString ka = claves.value(a.id), kb = claves.value(b.id);
         if (ka != kb) return ka < kb;
         if (a.nombre != b.nombre) return a.nombre < b.nombre;      // «Telefono» y «Teléfono»: siempre en el mismo orden

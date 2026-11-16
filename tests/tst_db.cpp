@@ -72,6 +72,14 @@ private slots:
         QCOMPARE(todas.size(), 3 + nombres(Tipo::Gasto).size());
         for (int i = 0; i < todas.size(); ++i) QVERIFY((todas[i].tipo == Tipo::Ingreso) == (i < 3));
         QCOMPARE(todas[3].nombre, QString("aaa"));
+
+        // «Propinas Ariel» va primera entre los ingresos (pedido del usuario); como gasto no cambia nada
+        QVERIFY(c.crearCategoria("Propinas Ariel", Tipo::Ingreso).ok);
+        QVERIFY(c.crearCategoria("Propinas Ariel", Tipo::Gasto).ok);
+        QCOMPARE(nombres(Tipo::Ingreso), (QStringList{"Propinas Ariel", "Aguinaldo", "Ingresos Varios", "Sueldo"}));
+        gastos = nombres(Tipo::Gasto);
+        QCOMPARE(gastos.indexOf("Propinas Ariel"), gastos.indexOf("Obra social Carina") + 1);
+        QCOMPARE(c.categorias().first().nombre, QString("Propinas Ariel"));
     }
 
     void movimientoNuevoArrancaEnLaCategoriaDeSiempreYNoEnLaPrimeraDeLaLista()

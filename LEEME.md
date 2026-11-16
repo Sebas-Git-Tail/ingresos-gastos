@@ -142,6 +142,9 @@ Al importar también acepta `,` o tabulación como separador, columnas en otro o
 guardados por Excel en Windows. Si no hay columna *Tipo*, un monto negativo se toma como gasto.
 
 ## Versiones
+**2.1.1** — «Propinas Ariel» aparece primera en la lista de categorías de ingresos (en la PC y en el celular);
+las demás siguen por orden alfabético. No cambia la base ni la sincronización.
+
 **2.1.0** — Varias cuentas, presupuestos por categoría y movimientos fijos (ver la tabla de arriba). La sincronización
 ahora va **cifrada** y el emparejamiento no deja adivinar el código escuchando la red: **hay que emparejar de nuevo
 una vez** el celular con la PC (Olvidar esta PC y emparejar con un código nuevo) y actualizar **los dos**. El CSV
