@@ -1,5 +1,6 @@
 // Ingresos y Gastos para Android (Qt Quick). En la PC también se puede ejecutar, para probarla.
 #include "controlador.h"
+#include "Traducciones.h"
 #include "db.h"
 #include "ModeloApps.h"
 #include <QDir>
@@ -16,6 +17,7 @@ Q_IMPORT_QML_PLUGIN(IngresosGastosPlugin)
 int main(int argc, char* argv[])
 {
     QGuiApplication app(argc, argv);
+    apps::cargarTraduccionesQt();   // botones estándar en español (comun/apps; Android y Windows no traen la traducción)
     QGuiApplication::setOrganizationName(QStringLiteral("ingresos-gastos"));
     QGuiApplication::setApplicationName(QStringLiteral("ingresos-gastos-movil"));
     QGuiApplication::setApplicationDisplayName(QStringLiteral("Ingresos y Gastos"));

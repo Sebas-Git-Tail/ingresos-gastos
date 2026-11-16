@@ -1,5 +1,6 @@
 // Ingresos y Gastos: punto de entrada.
 #include "PanelApps.h"
+#include "Traducciones.h"
 #include "db.h"
 #include "ventanaprincipal.h"
 #include <QApplication>
@@ -12,6 +13,7 @@
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
+    apps::cargarTraduccionesQt();   // botones estándar en español (comun/apps; Android y Windows no traen la traducción)
     QApplication::setOrganizationName(QStringLiteral("ingresos-gastos"));
     QApplication::setApplicationName(QStringLiteral("ingresos-gastos"));
     QApplication::setApplicationDisplayName(QStringLiteral("Ingresos y Gastos"));
