@@ -7,6 +7,7 @@ Rectangle {
     id: tarjeta
     property string titulo
     property string valor
+    property int signo: 0                           // verde (1), rojo (-1) o color normal (0)
     property color marca: "transparent"
 
     Layout.fillWidth: true
@@ -30,6 +31,7 @@ Rectangle {
         Label {
             Layout.fillWidth: true
             text: tarjeta.valor
+            color: ventana.colorMonto(tarjeta.signo)
             font.pixelSize: 15
             font.bold: true
             fontSizeMode: Text.HorizontalFit             // los montos grandes se achican, nunca se cortan

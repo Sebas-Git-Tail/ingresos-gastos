@@ -81,7 +81,7 @@ Page {
                             Layout.fillWidth: true
                         }
                     }
-                    Label { text: fila.montoTexto; font.pixelSize: 15; font.bold: fila.ingreso }
+                    Label { text: fila.montoTexto; font.pixelSize: 15; font.bold: fila.ingreso; color: ventana.colorMonto(fila.ingreso ? 1 : -1) }
                 }
             }
 

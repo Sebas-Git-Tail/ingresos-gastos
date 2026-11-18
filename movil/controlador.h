@@ -34,6 +34,11 @@ class Controlador : public QObject
     Q_PROPERTY(QString ingresosTexto READ ingresosTexto NOTIFY cambio)
     Q_PROPERTY(QString gastosTexto READ gastosTexto NOTIFY cambio)
     Q_PROPERTY(QString resultadoTexto READ resultadoTexto NOTIFY cambio)
+    // Signo (-1, 0, 1) para pintar los montos de verde o rojo (0 = sin color). Los gastos van con signo negativo.
+    Q_PROPERTY(int ingresosSigno READ ingresosSigno NOTIFY cambio)
+    Q_PROPERTY(int gastosSigno READ gastosSigno NOTIFY cambio)
+    Q_PROPERTY(int saldoSigno READ saldoSigno NOTIFY cambio)
+    Q_PROPERTY(int resultadoSigno READ resultadoSigno NOTIFY cambio)
     // Movimientos
     Q_PROPERTY(ModeloMovimientos* movimientos READ movimientos CONSTANT)
     Q_PROPERTY(QString busqueda READ busqueda WRITE setBusqueda NOTIFY cambio)
@@ -63,7 +68,7 @@ class Controlador : public QObject
     Q_PROPERTY(QString version READ version CONSTANT)
     Q_PROPERTY(QString rutaBase READ rutaBase CONSTANT)
     // ---- 2.1.0: cuentas, presupuestos y movimientos fijos
-    Q_PROPERTY(QVariantList cuentas READ cuentas NOTIFY cambio)           // [{id, nombre, saldo, saldoInicial, principal, movimientos}]
+    Q_PROPERTY(QVariantList cuentas READ cuentas NOTIFY cambio)           // [{id, nombre, saldo, signo, saldoInicial, principal, movimientos}]
     Q_PROPERTY(qint64 cuentaVista READ cuentaVista WRITE setCuentaVista NOTIFY cambio)   // 0 = todas
     Q_PROPERTY(QVariantList presupuestos READ presupuestos NOTIFY cambio) // del mes que se mira: [{nombre, gastado, presupuesto, porcentaje, pasado}]
     Q_PROPERTY(QString avisoPresupuesto READ avisoPresupuesto NOTIFY cambio)
@@ -84,6 +89,10 @@ public:
     QString ingresosTexto() const { return ingresosTexto_; }
     QString gastosTexto() const { return gastosTexto_; }
     QString resultadoTexto() const { return resultadoTexto_; }
+    int ingresosSigno() const { return ingresosSigno_; }
+    int gastosSigno() const { return gastosSigno_; }
+    int saldoSigno() const { return saldoSigno_; }
+    int resultadoSigno() const { return resultadoSigno_; }
     ModeloMovimientos* movimientos() { return &modelo_; }
     QString busqueda() const { return busqueda_; }
     void setBusqueda(const QString& b);
@@ -221,6 +230,7 @@ private:
     QList<int> aniosBarras_;
 
     QString saldoTexto_, saldoAyuda_, ingresosTexto_, gastosTexto_, resultadoTexto_, cantidadTexto_;
+    int ingresosSigno_ = 0, gastosSigno_ = 0, saldoSigno_ = 0, resultadoSigno_ = 0;
     QVariantMap barras_, tortaGastos_, tortaIngresos_;
     QVariantList totalesMeses_, totalesCategorias_, totalesAnios_;
 };

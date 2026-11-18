@@ -55,10 +55,14 @@ QString escribirArchivo(const QUrl& url, const QByteArray& datos)
     return QString();
 }
 
+int signo(Centavos c) { return c > 0 ? 1 : c < 0 ? -1 : 0; }
+
 QVariantMap filaTotal(const QString& nombre, const TotalPeriodo& t, bool marcado, bool esTotal)
 {
     return QVariantMap{{"nombre", nombre}, {"ingresos", formatearPesos(t.ingresos)}, {"gastos", formatearPesos(t.gastos)},
-                       {"saldo", formatearPesosConSigno(t.saldo())}, {"marcado", marcado}, {"total", esTotal}};
+                       {"saldo", formatearPesosConSigno(t.saldo())}, {"signo", signo(t.saldo())},
+                       {"signoIngresos", signo(t.ingresos)}, {"signoGastos", -signo(t.gastos)},
+                       {"marcado", marcado}, {"total", esTotal}};
 }
 
 } // namespace
@@ -263,8 +267,13 @@ void Controlador::cargarTarjetas()
     ingresosTexto_ = formatearPesos(t.ingresos);
     gastosTexto_ = formatearPesos(t.gastos);
     resultadoTexto_ = formatearPesosConSigno(t.saldo());
+    resultadoSigno_ = signo(t.saldo());
+    ingresosSigno_ = signo(t.ingresos);
+    gastosSigno_ = -signo(t.gastos);
     const QDate h = QDate::currentDate();
-    saldoTexto_ = formatearPesos(cuentas_.saldo(h));
+    const Centavos saldo = cuentas_.saldo(h);
+    saldoTexto_ = formatearPesos(saldo);
+    saldoSigno_ = signo(saldo);
     saldoAyuda_ = QStringLiteral("Al %1: saldo inicial %2 + ingresos − gastos").arg(h.toString(QStringLiteral("dd/MM/yyyy")),
                                                                                   formatearPesos(cuentas_.saldoInicial()));
 }
@@ -339,10 +348,12 @@ void Controlador::cargarTotales()
         Centavos total = 0;
         for (const TotalCategoria& tc : lista) total += tc.total;
         totalesCategorias_ << QVariantMap{{"clase", "titulo"}, {"nombre", tipo == Tipo::Gasto ? QStringLiteral("Gastos") : QStringLiteral("Ingresos")},
-                                          {"total", formatearPesos(total)}, {"pct", QString()}, {"color", QColor(Qt::transparent)}};
+                                          {"total", formatearPesos(total)}, {"signo", tipo == Tipo::Gasto ? -signo(total) : signo(total)},
+                                          {"pct", QString()}, {"color", QColor(Qt::transparent)}};
         for (const TotalCategoria& tc : lista) {
             if (tc.total <= 0) continue;
             totalesCategorias_ << QVariantMap{{"clase", "cat"}, {"nombre", tc.nombre}, {"total", formatearPesos(tc.total)},
+                                              {"signo", tipo == Tipo::Gasto ? -1 : 1},
                                               {"pct", pct(tc.total, total)}, {"color", tema.serie[std::clamp(tc.color, 0, 7)]}};
         }
     }
@@ -679,7 +690,7 @@ QVariantList Controlador::cuentas() const
 {
     QVariantList l;
     for (const CuentaDinero& c : cuentas_.cuentasDinero())
-        l << QVariantMap{{"id", c.id}, {"nombre", c.nombre}, {"saldo", formatearPesos(c.saldo)},
+        l << QVariantMap{{"id", c.id}, {"nombre", c.nombre}, {"saldo", formatearPesos(c.saldo)}, {"signo", signo(c.saldo)},
                          {"saldoInicial", formatearPesos(c.saldoInicial).mid(2)}, {"principal", c.principal}, {"movimientos", c.movimientos}};
     return l;
 }

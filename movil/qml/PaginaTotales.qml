@@ -8,15 +8,19 @@ Page {
     // Renglón de mes o año: nombre y saldo arriba, ingresos y gastos abajo
     component FilaPeriodo: ColumnLayout {
         property var fila
+        function monto(texto, signo) {
+            return signo === 0 ? texto : "<font color=\"" + ventana.colorMonto(signo) + "\">" + texto + "</font>"
+        }
         Layout.fillWidth: true
         spacing: 0
         RowLayout {
             Layout.fillWidth: true
             Label { text: fila.nombre; font.bold: fila.marcado || fila.total; font.pixelSize: 15; Layout.fillWidth: true }
-            Label { text: fila.saldo; font.bold: fila.marcado || fila.total; font.pixelSize: 15 }
+            Label { text: fila.saldo; color: ventana.colorMonto(fila.signo); font.bold: fila.marcado || fila.total; font.pixelSize: 15 }
         }
         Label {
-            text: "Ingresos " + fila.ingresos + "   ·   Gastos " + fila.gastos
+            text: "Ingresos " + monto(fila.ingresos, fila.signoIngresos) + "&nbsp;&nbsp; · &nbsp;&nbsp;Gastos " + monto(fila.gastos, fila.signoGastos)
+            textFormat: Text.StyledText
             font.pixelSize: 12
             color: ventana.tintaSecundaria
             elide: Text.ElideRight
@@ -62,7 +66,7 @@ Page {
                         elide: Text.ElideRight
                         Layout.fillWidth: true
                     }
-                    Label { text: modelData.total; font.bold: modelData.clase === "titulo"; font.pixelSize: 15 }
+                    Label { text: modelData.total; color: ventana.colorMonto(modelData.signo); font.bold: modelData.clase === "titulo"; font.pixelSize: 15 }
                     Label {
                         text: modelData.pct
                         font.pixelSize: 13

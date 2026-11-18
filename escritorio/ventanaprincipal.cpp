@@ -68,6 +68,25 @@ QTableWidgetItem* celda(const QString& texto, bool numero = false, bool negrita 
     return it;
 }
 
+// Montos de color: verde lo que suma (ingresos, saldo y resultado positivos), rojo lo que resta (gastos, negativos)
+QColor colorMonto(Centavos c)
+{
+    const tema::Colores& col = tema::colores();
+    return c > 0 ? col.ok : c < 0 ? col.error : col.texto;
+}
+
+void pintarMonto(QLabel* label, Centavos c)
+{
+    label->setStyleSheet(QStringLiteral("QLabel { color: %1; }").arg(colorMonto(c).name()));
+}
+
+QTableWidgetItem* celdaMonto(const QString& texto, Centavos c, bool negrita = false)
+{
+    auto* it = celda(texto, true, negrita);
+    it->setForeground(colorMonto(c));
+    return it;
+}
+
 void ajustarTabla(QTableWidget* t)
 {
     t->verticalHeader()->setVisible(false);
@@ -433,6 +452,7 @@ void VentanaPrincipal::cargarMovimientos()
         auto* monto = new QStandardItem(formatearPesosConSigno(conSigno));
         monto->setData(conSigno, RolOrden);
         monto->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        monto->setForeground(colorMonto(conSigno));
 
         QList<QStandardItem*> fila{fecha, tipo, cat, desc, monto};
         for (QStandardItem* it : fila) it->setEditable(false);
@@ -458,9 +478,14 @@ void VentanaPrincipal::cargarTarjetas()
     ui->labelIngresos->setText(formatearPesos(t.ingresos));
     ui->labelGastos->setText(formatearPesos(t.gastos));
     ui->labelResultado->setText(formatearPesosConSigno(t.saldo()));
+    pintarMonto(ui->labelIngresos, t.ingresos);
+    pintarMonto(ui->labelGastos, -t.gastos);
+    pintarMonto(ui->labelResultado, t.saldo());
 
     const QDate hoy = QDate::currentDate();
-    ui->labelSaldo->setText(formatearPesos(cuentas_.saldo(hoy)));
+    const Centavos saldo = cuentas_.saldo(hoy);
+    ui->labelSaldo->setText(formatearPesos(saldo));
+    pintarMonto(ui->labelSaldo, saldo);
     QString cuenta = tr("la cuenta");
     if (cuentas_.cuentasDinero().size() > 1)
         cuenta = cuentas_.cuentaVista() ? QStringLiteral("«%1»").arg(ui->comboCuenta->currentText()) : tr("todas las cuentas");
@@ -562,14 +587,14 @@ void VentanaPrincipal::cargarTotales()
         totalAnio.gastos += t.gastos;
         const bool elegido = vista_ == Vista::Mes && m == periodo_.month() - 1;
         ui->tablaMeses->setItem(m, 0, celda(nombreMes(m + 1), false, elegido));
-        ui->tablaMeses->setItem(m, 1, celda(formatearPesos(t.ingresos), true, elegido));
-        ui->tablaMeses->setItem(m, 2, celda(formatearPesos(t.gastos), true, elegido));
-        ui->tablaMeses->setItem(m, 3, celda(formatearPesosConSigno(t.saldo()), true, elegido));
+        ui->tablaMeses->setItem(m, 1, celdaMonto(formatearPesos(t.ingresos), t.ingresos, elegido));
+        ui->tablaMeses->setItem(m, 2, celdaMonto(formatearPesos(t.gastos), -t.gastos, elegido));
+        ui->tablaMeses->setItem(m, 3, celdaMonto(formatearPesosConSigno(t.saldo()), t.saldo(), elegido));
     }
     ui->tablaMeses->setItem(12, 0, celda(tr("Total %1").arg(anio), false, true));
-    ui->tablaMeses->setItem(12, 1, celda(formatearPesos(totalAnio.ingresos), true, true));
-    ui->tablaMeses->setItem(12, 2, celda(formatearPesos(totalAnio.gastos), true, true));
-    ui->tablaMeses->setItem(12, 3, celda(formatearPesosConSigno(totalAnio.saldo()), true, true));
+    ui->tablaMeses->setItem(12, 1, celdaMonto(formatearPesos(totalAnio.ingresos), totalAnio.ingresos, true));
+    ui->tablaMeses->setItem(12, 2, celdaMonto(formatearPesos(totalAnio.gastos), -totalAnio.gastos, true));
+    ui->tablaMeses->setItem(12, 3, celdaMonto(formatearPesosConSigno(totalAnio.saldo()), totalAnio.saldo(), true));
 
     // Por categoría (del período elegido)
     ui->labelTotalesCategorias->setText(tr("Por categoría — %1").arg(textoPeriodo()));
@@ -586,15 +611,16 @@ void VentanaPrincipal::cargarTotales()
         const QList<TotalCategoria> lista = cuentas_.totalesPorCategoria(desde, hasta, tipo);
         Centavos total = 0;
         for (const TotalCategoria& tc : lista) total += tc.total;
+        const int signo = tipo == Tipo::Gasto ? -1 : 1;
         if (ui->tablaCategorias->rowCount() > 0) agregarFila(celda(QString()), celda(QString()), celda(QString()));
         agregarFila(celda(tipo == Tipo::Gasto ? tr("Gastos") : tr("Ingresos"), false, true),
-                    celda(formatearPesos(total), true, true), celda(QString()));
+                    celdaMonto(formatearPesos(total), signo * total, true), celda(QString()));
         for (const TotalCategoria& tc : lista) {
             if (tc.total <= 0) continue;
             auto* nombre = celda(tc.nombre);
             nombre->setIcon(muestraColor(colorCategoria(tema, tc.color)));
             const double pct = total > 0 ? 100.0 * double(tc.total) / double(total) : 0;
-            agregarFila(nombre, celda(formatearPesos(tc.total), true),
+            agregarFila(nombre, celdaMonto(formatearPesos(tc.total), signo * tc.total),
                         celda(QString::number(pct, 'f', 1).replace(QLatin1Char('.'), QLatin1Char(',')) + QStringLiteral(" %"), true));
         }
     }
@@ -609,15 +635,15 @@ void VentanaPrincipal::cargarTotales()
         total.gastos += t.gastos;
         const bool elegido = vista_ != Vista::Todo && a == anio;
         ui->tablaAnios->setItem(i, 0, celda(QString::number(a), false, elegido));
-        ui->tablaAnios->setItem(i, 1, celda(formatearPesos(t.ingresos), true, elegido));
-        ui->tablaAnios->setItem(i, 2, celda(formatearPesos(t.gastos), true, elegido));
-        ui->tablaAnios->setItem(i, 3, celda(formatearPesosConSigno(t.saldo()), true, elegido));
+        ui->tablaAnios->setItem(i, 1, celdaMonto(formatearPesos(t.ingresos), t.ingresos, elegido));
+        ui->tablaAnios->setItem(i, 2, celdaMonto(formatearPesos(t.gastos), -t.gastos, elegido));
+        ui->tablaAnios->setItem(i, 3, celdaMonto(formatearPesosConSigno(t.saldo()), t.saldo(), elegido));
     }
     const int r = anios.size();
     ui->tablaAnios->setItem(r, 0, celda(tr("Total"), false, true));
-    ui->tablaAnios->setItem(r, 1, celda(formatearPesos(total.ingresos), true, true));
-    ui->tablaAnios->setItem(r, 2, celda(formatearPesos(total.gastos), true, true));
-    ui->tablaAnios->setItem(r, 3, celda(formatearPesosConSigno(total.saldo()), true, true));
+    ui->tablaAnios->setItem(r, 1, celdaMonto(formatearPesos(total.ingresos), total.ingresos, true));
+    ui->tablaAnios->setItem(r, 2, celdaMonto(formatearPesos(total.gastos), -total.gastos, true));
+    ui->tablaAnios->setItem(r, 3, celdaMonto(formatearPesosConSigno(total.saldo()), total.saldo(), true));
 }
 
 void VentanaPrincipal::actualizarBotones()

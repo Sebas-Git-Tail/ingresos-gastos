@@ -46,7 +46,7 @@ Page {
                         Label { text: modelData.nombre + (modelData.principal && modelData.nombre !== "Principal" ? " (principal)" : ""); font.pixelSize: 16; font.bold: true }
                         Label { text: modelData.movimientos + " movimiento(s) · saldo inicial $ " + modelData.saldoInicial; font.pixelSize: 12; color: ventana.tintaApagada }
                     }
-                    Label { text: modelData.saldo; font.pixelSize: 18; font.bold: true }
+                    Label { text: modelData.saldo; color: ventana.colorMonto(modelData.signo); font.pixelSize: 18; font.bold: true }
                 }
             }
         }

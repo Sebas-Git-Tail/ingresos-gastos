@@ -27,6 +27,9 @@ ApplicationWindow {
     readonly property color azul: oscuro ? "#3987e5" : "#2a78d6"
     readonly property color naranja: oscuro ? "#d95926" : "#eb6834"
 
+    // Montos: verde lo que suma, rojo lo que resta (signo -1, 0, 1; 0 = color normal)
+    function colorMonto(signo) { return signo > 0 ? Tema.verde : signo < 0 ? Tema.rojo : Material.foreground }
+
     onOscuroChanged: App.oscuro = oscuro
     Component.onCompleted: { App.oscuro = oscuro; Tema.acento = "#2a78d6" }   // y el tema común (Comun.Ui) con el color de la app
 
@@ -177,6 +180,7 @@ ApplicationWindow {
                             Item { Layout.fillWidth: true; visible: App.cuentas.length <= 1 }
                             Label {
                                 text: App.saldoTexto
+                                color: ventana.colorMonto(App.saldoSigno)
                                 font.pixelSize: 24
                                 font.bold: true
                                 MouseArea { anchors.fill: parent; onClicked: ventana.avisar(App.saldoAyuda) }
@@ -185,9 +189,9 @@ ApplicationWindow {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 8
-                            Tarjeta { titulo: "Ingresos"; valor: App.ingresosTexto; marca: ventana.azul }
-                            Tarjeta { titulo: "Gastos"; valor: App.gastosTexto; marca: ventana.naranja }
-                            Tarjeta { titulo: "Resultado"; valor: App.resultadoTexto; marca: "transparent" }
+                            Tarjeta { titulo: "Ingresos"; valor: App.ingresosTexto; signo: App.ingresosSigno; marca: ventana.azul }
+                            Tarjeta { titulo: "Gastos"; valor: App.gastosTexto; signo: App.gastosSigno; marca: ventana.naranja }
+                            Tarjeta { titulo: "Resultado"; valor: App.resultadoTexto; signo: App.resultadoSigno; marca: "transparent" }
                         }
                     }
                 }
