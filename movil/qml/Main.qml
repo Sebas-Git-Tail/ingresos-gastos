@@ -56,7 +56,7 @@ ApplicationWindow {
         RowLayout {
             anchors.fill: parent
             spacing: 0
-            ToolButton { icon.source: "qrc:/IngresosGastos/iconos/menu.svg"; onClicked: menu.open(); Accessible.name: "Menú" }   // íconos SVG: algunos celulares (Samsung) no tienen ☰ ▾ ⟳ en la fuente
+            BotonMenu { punto: Apps.versionNueva !== ""; onClicked: menu.open() }   // íconos SVG: algunos celulares (Samsung) no tienen ☰ ▾ ⟳ en la fuente
             ToolButton { text: "‹"; font.pixelSize: 28; enabled: App.navegable; onClicked: App.anterior(); Accessible.name: "Anterior" }
             ToolButton {
                 Layout.fillWidth: true
@@ -115,9 +115,9 @@ ApplicationWindow {
                     { texto: "Apps y actualizaciones", accion: "apps" },
                     { texto: "Acerca de", accion: "acerca" }
                 ]
-                ItemDelegate {
-                    Layout.fillWidth: true
+                ItemMenu {
                     text: modelData.texto
+                    destacado: modelData.accion === "apps" && Apps.versionNueva !== ""
                     onClicked: { menu.close(); ventana.abrir(modelData.accion) }
                 }
             }
@@ -236,11 +236,11 @@ ApplicationWindow {
     Component { id: editorFijo; EditorFijo {} }
     Component { id: paginaApps; PaginaApps { conBarra: true; nombreApp: "Ingresos y Gastos" } }
 
-    // Versión nueva de la app (se busca una vez por día): pregunta y abre el instalador de Android
+    // Versión nueva de la app (se busca cada vez que se abre: marca el menú; pregunta como mucho una vez por día)
     Timer { interval: 4000; running: true; onTriggered: Apps.buscarActualizacion(false) }
     Connections {
         target: Apps
-        function onVersionNuevaCambio() { if (Apps.versionNueva !== "" && pila.depth === 1) dialogoVersion.open() }
+        function onAvisoVersionNueva() { if (pila.depth === 1) dialogoVersion.open() }   // una vez por día; el menú se marca siempre
     }
     Dialog {
         id: dialogoVersion

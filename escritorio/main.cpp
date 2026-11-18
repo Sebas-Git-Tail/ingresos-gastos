@@ -3,6 +3,7 @@
 #include "Traducciones.h"
 #include "db.h"
 #include "ventanaprincipal.h"
+#include "Piezas.h"
 #include "Tema.h"
 #include <QApplication>
 #include <QIcon>
@@ -41,6 +42,7 @@ int main(int argc, char* argv[])
     }
 
     VentanaPrincipal ventana(cuentas);
+    tema::recordarVentana(&ventana);   // mismo tamaño (y maximizada o en pantalla completa) que la última vez
     ventana.show();
     // Una vez por día: si hay una versión nueva, pregunta y la instala (pkexec pacman -U). Acá y no en la
     // ventana, para que las pruebas (que crean la ventana) no salgan a internet.
