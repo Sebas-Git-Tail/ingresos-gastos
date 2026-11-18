@@ -23,6 +23,7 @@
 #include <QMessageBox>
 #include <QPainter>
 #include <QSaveFile>
+#include <QBoxLayout>
 #include <QSettings>
 #include <QShortcut>
 #include <QStackedWidget>
@@ -284,6 +285,13 @@ void VentanaPrincipal::armarMenu()
     ui->btnMenu->setStyleSheet(QStringLiteral("QToolButton::menu-indicator { image: none; }"));
     ui->btnMenu->setIcon(tema::icono(QStringLiteral("menu")));
     ui->btnMenu->setText(QString());
+    // Al lado del menú: modo claro / oscuro (se recuerda)
+    for (QBoxLayout* capa : findChildren<QBoxLayout*>()) {
+        if (const int i = capa->indexOf(ui->btnMenu); i >= 0) {
+            capa->insertWidget(i, tema::botonModo(this));
+            break;
+        }
+    }
 
     // Íconos propios (comun/ui): se ven igual en Linux, Windows y sin tema de íconos
     ui->actionCategorias->setIcon(tema::icono(QStringLiteral("etiqueta")));
@@ -790,22 +798,26 @@ void VentanaPrincipal::armarEstilo()
     ui->inputBuscar->addAction(tema::icono(QStringLiteral("buscar"), c.texto3), QLineEdit::LeadingPosition);
     ui->inputBuscar->setClearButtonEnabled(true);
 
-    // «Ingreso» y «Gasto»: rellenos con el color de su serie (el mismo de los gráficos y las tarjetas)
-    const TemaGrafico graficos = temaPara(this);
-    const auto pintar = [](QPushButton* boton, const QColor& color, const QString& texto) {
-        boton->setText(texto);
-        boton->setIcon(tema::icono(QStringLiteral("agregar"), QColor(0x0b, 0x0d, 0x10)));
-        boton->setStyleSheet(QStringLiteral("QPushButton { background: %1; border-color: %1; color: #0b0d10; font-weight: 600; padding: 6px 16px; }"
-                                            "QPushButton:hover { background: %2; border-color: %2; }")
-                                 .arg(color.name(), color.lighter(112).name()));
+    // «Ingreso» y «Gasto»: rellenos con el color de su serie (el mismo de los gráficos y las tarjetas), y el
+    // recuadro de avisos de presupuestos. Se rehacen al cambiar de modo claro/oscuro.
+    const auto estiloDeColores = [this] {
+        const TemaGrafico graficos = temaPara(this);
+        const auto pintar = [](QPushButton* boton, const QColor& color, const QString& texto) {
+            boton->setText(texto);
+            boton->setIcon(tema::icono(QStringLiteral("agregar"), QColor(0x0b, 0x0d, 0x10)));
+            boton->setStyleSheet(QStringLiteral("QPushButton { background: %1; border-color: %1; color: #0b0d10; font-weight: 600; padding: 6px 16px; }"
+                                                "QPushButton:hover { background: %2; border-color: %2; }")
+                                     .arg(color.name(), color.lighter(112).name()));
+        };
+        pintar(ui->btnNuevoIngreso, graficos.serie[0], tr("Ingreso"));
+        pintar(ui->btnNuevoGasto, graficos.serie[1], tr("Gasto"));
+        const QColor aviso = tema::colores().aviso;
+        ui->labelAvisos->setStyleSheet(QStringLiteral("QLabel { background: rgba(%1, %2, %3, 0.12); border: 1px solid rgba(%1, %2, %3, 0.4);"
+                                                      " border-radius: 8px; padding: 6px 12px; }")
+                                           .arg(aviso.red()).arg(aviso.green()).arg(aviso.blue()));
     };
-    pintar(ui->btnNuevoIngreso, graficos.serie[0], tr("Ingreso"));
-    pintar(ui->btnNuevoGasto, graficos.serie[1], tr("Gasto"));
-
-    // Aviso de presupuestos: recuadro de color
-    ui->labelAvisos->setStyleSheet(QStringLiteral("QLabel { background: rgba(%1, %2, %3, 0.12); border: 1px solid rgba(%1, %2, %3, 0.4);"
-                                                  " border-radius: 8px; padding: 6px 12px; }")
-                                       .arg(c.aviso.red()).arg(c.aviso.green()).arg(c.aviso.blue()));
+    estiloDeColores();
+    tema::alCambiarModo(this, estiloDeColores);
 
     // Tabla dentro de una pila: si no hay movimientos, se ve el estado vacío
     pilaTabla_ = new QStackedWidget(ui->tabMovimientos);

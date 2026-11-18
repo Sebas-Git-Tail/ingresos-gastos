@@ -15,13 +15,13 @@
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
-    tema::aplicar(app, QColor(0x4a, 0x90, 0xe2));   // tema oscuro común con el azul de la app (comun/ui)
     apps::cargarTraduccionesQt();   // botones estándar en español (comun/apps; Android y Windows no traen la traducción)
     QApplication::setOrganizationName(QStringLiteral("ingresos-gastos"));
     QApplication::setApplicationName(QStringLiteral("ingresos-gastos"));
     QApplication::setApplicationDisplayName(QStringLiteral("Ingresos y Gastos"));
     QApplication::setApplicationVersion(QStringLiteral(IG_VERSION));
     QApplication::setDesktopFileName(QStringLiteral("ingresos-gastos"));   // ícono correcto en la barra de Plasma
+    tema::aplicar(app, QColor(0x4a, 0x90, 0xe2));   // tema común (claro u oscuro) con el azul de la app (comun/ui)
     QApplication::setWindowIcon(QIcon::fromTheme(QStringLiteral("ingresos-gastos")));
 
     // Botones estándar de Qt (Sí, No, Cancelar...) en español
