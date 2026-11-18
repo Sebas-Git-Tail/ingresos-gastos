@@ -63,6 +63,7 @@ public:
     Resultado crearMovimiento(const Movimiento& m);
     Resultado actualizarMovimiento(const Movimiento& m);
     Resultado eliminarMovimiento(qint64 id);
+    Resultado restaurarMovimiento(qint64 id);        // deshace eliminarMovimiento (también llega al celular)
 
     // ---- cuentas de dinero (efectivo, banco, Mercado Pago...). Siempre está la principal.
     QList<CuentaDinero> cuentasDinero() const;                  // la principal primero; con saldo y movimientos

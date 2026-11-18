@@ -19,6 +19,7 @@
 #include <QtTest>
 
 Q_IMPORT_QML_PLUGIN(IngresosGastosPlugin)
+Q_IMPORT_QML_PLUGIN(Comun_UiPlugin)   // comun/ui/qml
 
 namespace {
 QVariantMap mov(int tipo, const QString& fecha, qint64 cat, const QString& monto, const QString& desc = {})

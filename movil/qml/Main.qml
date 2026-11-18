@@ -4,6 +4,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
+import Comun.Ui
 import QtQuick.Dialogs
 import IngresosGastos
 
@@ -27,7 +28,7 @@ ApplicationWindow {
     readonly property color naranja: oscuro ? "#d95926" : "#eb6834"
 
     onOscuroChanged: App.oscuro = oscuro
-    Component.onCompleted: App.oscuro = oscuro
+    Component.onCompleted: { App.oscuro = oscuro; Tema.acento = "#2a78d6" }   // y el tema común (Comun.Ui) con el color de la app
 
     // Botón «atrás» de Android: cierra el menú o vuelve a la pantalla anterior antes de salir
     onClosing: (cierre) => {
@@ -44,28 +45,10 @@ ApplicationWindow {
     }
     Timer { interval: 1500; running: true; onTriggered: { App.cargarFijos(); App.sincronizarSiCorresponde() } }
 
-    // Mensajito abajo («Gasto guardado», «Sincronizado…»)
-    function avisar(texto) { aviso.texto = texto; aviso.open() }
+    // Mensajito abajo («Guardado», «Sincronizado…»): AvisoFlotante de Comun.Ui
+    function avisar(texto) { aviso.mostrar(texto) }
     Connections { target: App; function onAviso(texto) { ventana.avisar(texto) } }
-    Popup {
-        id: aviso
-        property string texto
-        x: (ventana.width - width) / 2
-        y: ventana.height - height - 90
-        width: Math.min(ventana.width - 32, etiquetaAviso.implicitWidth + 32)
-        padding: 12
-        modal: false
-        closePolicy: Popup.CloseOnPressOutside
-        background: Rectangle { radius: 8; color: ventana.oscuro ? "#f0efec" : "#2c2c2a" }
-        contentItem: Label {
-            id: etiquetaAviso
-            text: aviso.texto
-            wrapMode: Text.WordWrap
-            color: ventana.oscuro ? "#0b0b0b" : "#f0efec"
-        }
-        onOpened: cerrarAviso.restart()
-        Timer { id: cerrarAviso; interval: 3500; onTriggered: aviso.close() }
-    }
+    AvisoFlotante { id: aviso; margenAbajo: 90 }
 
     header: ToolBar {
         Material.foreground: "white"
@@ -251,7 +234,7 @@ ApplicationWindow {
     Component { id: paginaCuentas; PaginaCuentas {} }
     Component { id: paginaFijos; PaginaFijos {} }
     Component { id: editorFijo; EditorFijo {} }
-    Component { id: paginaApps; PaginaApps {} }
+    Component { id: paginaApps; PaginaApps { conBarra: true; nombreApp: "Ingresos y Gastos" } }
 
     // Versión nueva de la app (se busca una vez por día): pregunta y abre el instalador de Android
     Timer { interval: 4000; running: true; onTriggered: Apps.buscarActualizacion(false) }

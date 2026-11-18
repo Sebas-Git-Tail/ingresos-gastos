@@ -20,7 +20,6 @@ qt_add_qml_module(igmovil
         qml/PaginaCuentas.qml
         qml/PaginaFijos.qml
         qml/EditorFijo.qml
-        qml/PaginaApps.qml
     RESOURCES
         iconos/menu.svg
         iconos/desplegar.svg
@@ -33,7 +32,7 @@ qt_add_qml_module(igmovil
         graficosquick.h graficosquick.cpp
 )
 target_include_directories(igmovil PUBLIC .)
-target_link_libraries(igmovil PUBLIC igcore Qt6::Quick Qt6::QuickControls2 Qt6::Svg comun_apps)
+target_link_libraries(igmovil PUBLIC igcore Qt6::Quick Qt6::QuickControls2 Qt6::Svg comun_apps comun_ui_qmlplugin)
 
 qt_add_executable(ingresos-gastos-movil main.cpp)
 target_link_libraries(ingresos-gastos-movil PRIVATE igmovil igmovilplugin)

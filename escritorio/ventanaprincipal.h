@@ -6,6 +6,8 @@
 #include <memory>
 
 namespace Ui { class MainWindow; }
+class QStackedWidget;
+namespace tema { class EstadoVacio; }
 class QStandardItemModel;
 class FiltroMovimientos;
 class ServidorSinc;
@@ -67,6 +69,7 @@ private:
     void nuevo(Tipo tipo);
     void armarMenu();
     void armarAtajos();
+    void armarEstilo();                 // tema común: íconos, botones de color, estado vacío
     void cargarMovimientos();
     void cargarTarjetas();
     void cargarGraficos();
@@ -89,4 +92,6 @@ private:
     QDate periodo_;
     QList<int> aniosBarras_;
     ServidorSinc* servidor_ = nullptr;                  // para que el celular sincronice                            // en la vista «Todo»: qué año es cada barra
+    QStackedWidget* pilaTabla_ = nullptr;   // la tabla de movimientos o, si no hay ninguno, el estado vacío
+    tema::EstadoVacio* vacio_ = nullptr;
 };

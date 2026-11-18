@@ -2,6 +2,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import Comun.Ui
 import IngresosGastos
 
 Page {
@@ -84,12 +85,14 @@ Page {
                 }
             }
 
-            Label {
+            EstadoVacio {
                 anchors.centerIn: parent
+                width: parent.width - 48
                 visible: lista.count === 0
-                text: App.busqueda !== "" || App.filtroTipo !== 0 ? "Nada coincide con la búsqueda"
-                                                                  : "No hay movimientos en " + App.periodoTexto
-                color: ventana.tintaApagada
+                readonly property bool filtrando: App.busqueda !== "" || App.filtroTipo !== 0
+                icono: filtrando ? "buscar" : "dinero"
+                titulo: filtrando ? "Nada coincide con la búsqueda" : "No hay movimientos en " + App.periodoTexto
+                texto: filtrando ? "Probá con otra palabra, una categoría o un monto." : "Cargá el primero con el botón de abajo."
             }
         }
 

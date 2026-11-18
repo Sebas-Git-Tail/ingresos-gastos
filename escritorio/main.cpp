@@ -3,6 +3,7 @@
 #include "Traducciones.h"
 #include "db.h"
 #include "ventanaprincipal.h"
+#include "Tema.h"
 #include <QApplication>
 #include <QIcon>
 #include <QLibraryInfo>
@@ -13,6 +14,7 @@
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
+    tema::aplicar(app, QColor(0x4a, 0x90, 0xe2));   // tema oscuro común con el azul de la app (comun/ui)
     apps::cargarTraduccionesQt();   // botones estándar en español (comun/apps; Android y Windows no traen la traducción)
     QApplication::setOrganizationName(QStringLiteral("ingresos-gastos"));
     QApplication::setApplicationName(QStringLiteral("ingresos-gastos"));

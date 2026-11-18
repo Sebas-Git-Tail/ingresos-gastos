@@ -1,4 +1,6 @@
 #include "ventanaprincipal.h"
+#include "Piezas.h"
+#include "Tema.h"
 #include "ui_main.h"
 #include "csv.h"
 #include "dialogocategorias.h"
@@ -23,6 +25,7 @@
 #include <QSaveFile>
 #include <QSettings>
 #include <QShortcut>
+#include <QStackedWidget>
 #include <QSortFilterProxyModel>
 #include <QStandardItemModel>
 #include <QStandardPaths>
@@ -152,6 +155,7 @@ VentanaPrincipal::VentanaPrincipal(Cuentas& cuentas, QWidget* parent)
     ui->tablaMovimientos->sortByColumn(ColFecha, Qt::DescendingOrder);
 
     for (QTableWidget* t : {ui->tablaMeses, ui->tablaCategorias, ui->tablaAnios}) ajustarTabla(t);
+    armarEstilo();
 
     // Señales
     connect(ui->btnAnterior, &QToolButton::clicked, this, [this] { moverPeriodo(-1); });
@@ -259,13 +263,20 @@ void VentanaPrincipal::armarMenu()
     addAction(salir);
     ui->btnMenu->setMenu(menu);
     ui->btnMenu->setStyleSheet(QStringLiteral("QToolButton::menu-indicator { image: none; }"));
+    ui->btnMenu->setIcon(tema::icono(QStringLiteral("menu")));
+    ui->btnMenu->setText(QString());
 
-    ui->actionCategorias->setIcon(QIcon::fromTheme(QStringLiteral("tag")));
-    ui->actionImportar->setIcon(QIcon::fromTheme(QStringLiteral("document-import")));
-    ui->actionExportar->setIcon(QIcon::fromTheme(QStringLiteral("document-export")));
-    ui->actionBackup->setIcon(QIcon::fromTheme(QStringLiteral("document-save")));
-    ui->actionAcerca->setIcon(QIcon::fromTheme(QStringLiteral("help-about")));
-    ui->actionSincronizar->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
+    // Íconos propios (comun/ui): se ven igual en Linux, Windows y sin tema de íconos
+    ui->actionCategorias->setIcon(tema::icono(QStringLiteral("etiqueta")));
+    ui->actionCuentas->setIcon(tema::icono(QStringLiteral("cuenta")));
+    ui->actionFijos->setIcon(tema::icono(QStringLiteral("repetir")));
+    ui->actionSaldoInicial->setIcon(tema::icono(QStringLiteral("dinero")));
+    ui->actionImportar->setIcon(tema::icono(QStringLiteral("subir")));
+    ui->actionExportar->setIcon(tema::icono(QStringLiteral("descargar")));
+    ui->actionBackup->setIcon(tema::icono(QStringLiteral("respaldo")));
+    ui->actionAcerca->setIcon(tema::icono(QStringLiteral("info")));
+    ui->actionSincronizar->setIcon(tema::icono(QStringLiteral("sincronizar")));
+    salir->setIcon(tema::icono(QStringLiteral("cerrar")));
     ui->actionImportar->setShortcut(QKeySequence::Open);
     ui->actionExportar->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_E));
     for (QAction* a : {ui->actionCategorias, ui->actionSaldoInicial, ui->actionImportar, ui->actionExportar,
@@ -386,9 +397,10 @@ void VentanaPrincipal::cargarAvisos()
         return;
     }
     QString html;
-    if (!pasados.isEmpty()) html += tr("⚠ Te pasaste del presupuesto en %1: %2").arg(nombreMes(mes.month()).toLower(), pasados.join(QStringLiteral(" · ")));
+    if (!pasados.isEmpty()) html += tr("Te pasaste del presupuesto en %1: %2").arg(nombreMes(mes.month()).toLower(), pasados.join(QStringLiteral(" · ")));
     if (!cerca.isEmpty()) html += (html.isEmpty() ? QString() : QStringLiteral("<br>")) + tr("Cerca del presupuesto: %1").arg(cerca.join(QStringLiteral(" · ")));
-    ui->labelAvisos->setText(html + QStringLiteral(" — <a href=\"categorias\">Presupuestos</a>"));
+    ui->labelAvisos->setText(html + QStringLiteral(" — <a href=\"categorias\" style=\"color:%1\">Presupuestos</a>")
+                                        .arg(tema::colores().acento.name()));
     ui->labelAvisos->show();
 }
 
@@ -464,13 +476,29 @@ void VentanaPrincipal::cargarTarjetas()
 
     // Rayita del color de la serie en cada tarjeta (como en los gráficos)
     const TemaGrafico tema = temaPara(this);
-    const QString estilo = QStringLiteral("#%1 { border: 1px solid %2; border-left: 4px solid %3; border-radius: 3px; }");
-    ui->frameIngresos->setStyleSheet(estilo.arg(ui->frameIngresos->objectName(), tema.grilla.name(), tema.serie[0].name()));
-    ui->frameGastos->setStyleSheet(estilo.arg(ui->frameGastos->objectName(), tema.grilla.name(), tema.serie[1].name()));
-    ui->frameResultado->setStyleSheet(QStringLiteral("#frameResultado { border: 1px solid %1; border-radius: 3px; }").arg(tema.grilla.name()));
+    const QString estilo = QStringLiteral("#%1 { background: %4; border: 1px solid %2; border-left: 4px solid %3; border-radius: 10px; }");
+    const QString fondo = tema::colores().superficie.name();
+    ui->frameIngresos->setStyleSheet(estilo.arg(ui->frameIngresos->objectName(), tema.grilla.name(), tema.serie[0].name(), fondo));
+    ui->frameGastos->setStyleSheet(estilo.arg(ui->frameGastos->objectName(), tema.grilla.name(), tema.serie[1].name(), fondo));
+    ui->frameResultado->setStyleSheet(QStringLiteral("#frameResultado { background: %2; border: 1px solid %1; border-radius: 10px; }")
+                                          .arg(tema.grilla.name(), fondo));
 
     const int visibles = filtro_->rowCount();
     const int total = modelo_->rowCount();
+    // Sin movimientos para mostrar: el estado vacío en lugar de la tabla en blanco
+    if (visibles == 0) {
+        if (total > 0) {
+            vacio_->setTextos(tr("Nada coincide con la búsqueda"), tr("Probá con otra palabra, una categoría o un monto."));
+            vacio_->setTextoBoton(tr("Ver todos"));
+        } else {
+            vacio_->setTextos(tr("No hay movimientos en %1").arg(textoPeriodo().toLower()),
+                              tr("Cargá el primero con «Ingreso» o «Gasto» (abajo), o con Ctrl+I y Ctrl+G."));
+            vacio_->setTextoBoton(tr("Cargar un gasto"));
+        }
+        pilaTabla_->setCurrentWidget(vacio_);
+    } else {
+        pilaTabla_->setCurrentWidget(ui->tablaMovimientos);
+    }
     statusBar()->showMessage(visibles == total ? tr("%n movimiento(s)", nullptr, total)
                                                : tr("%1 de %2 movimientos (filtrados)").arg(visibles).arg(total));
 }
@@ -707,9 +735,68 @@ void VentanaPrincipal::eliminarSeleccionados()
     } else {
         pregunta = tr("¿Eliminar los %1 movimientos elegidos?").arg(ids.size());
     }
-    if (QMessageBox::question(this, tr("Eliminar"), pregunta.trimmed()) != QMessageBox::Yes) return;
+    Q_UNUSED(pregunta)
+    // Sin pregunta: se borra ya y el aviso de abajo ofrece «Deshacer» (los borrados quedan marcados en la
+    // base, así que se pueden recuperar y el celular también se entera)
     const int n = eliminarMovimientos(ids);
-    statusBar()->showMessage(tr("%n movimiento(s) eliminado(s)", nullptr, n), 5000);
+    tema::OpcionesAviso opciones;
+    opciones.milisegundos = 7000;
+    opciones.textoBoton = tr("Deshacer");
+    opciones.alBoton = [this, ids] {
+        for (qint64 id : ids) cuentas_.restaurarMovimiento(id);
+        refrescar();
+        if (ids.size() == 1) seleccionarMovimiento(ids.first());
+    };
+    tema::avisar(this, tr("%n movimiento(s) eliminado(s).", nullptr, n), opciones);
+}
+
+void VentanaPrincipal::armarEstilo()
+{
+    const tema::Colores& c = tema::colores();
+    ui->btnAnterior->setIcon(tema::icono(QStringLiteral("volver")));
+    ui->btnSiguiente->setIcon(tema::icono(QStringLiteral("siguiente")));
+    ui->btnAnterior->setText(QString());
+    ui->btnSiguiente->setText(QString());
+    ui->btnHoy->setIcon(tema::icono(QStringLiteral("calendario")));
+    ui->btnEditar->setIcon(tema::icono(QStringLiteral("editar")));
+    ui->btnEliminar->setIcon(tema::icono(QStringLiteral("borrar"), c.error));
+    tema::marcarPeligro(ui->btnEliminar);
+    ui->inputBuscar->addAction(tema::icono(QStringLiteral("buscar"), c.texto3), QLineEdit::LeadingPosition);
+    ui->inputBuscar->setClearButtonEnabled(true);
+
+    // «Ingreso» y «Gasto»: rellenos con el color de su serie (el mismo de los gráficos y las tarjetas)
+    const TemaGrafico graficos = temaPara(this);
+    const auto pintar = [](QPushButton* boton, const QColor& color, const QString& texto) {
+        boton->setText(texto);
+        boton->setIcon(tema::icono(QStringLiteral("agregar"), QColor(0x0b, 0x0d, 0x10)));
+        boton->setStyleSheet(QStringLiteral("QPushButton { background: %1; border-color: %1; color: #0b0d10; font-weight: 600; padding: 6px 16px; }"
+                                            "QPushButton:hover { background: %2; border-color: %2; }")
+                                 .arg(color.name(), color.lighter(112).name()));
+    };
+    pintar(ui->btnNuevoIngreso, graficos.serie[0], tr("Ingreso"));
+    pintar(ui->btnNuevoGasto, graficos.serie[1], tr("Gasto"));
+
+    // Aviso de presupuestos: recuadro de color
+    ui->labelAvisos->setStyleSheet(QStringLiteral("QLabel { background: rgba(%1, %2, %3, 0.12); border: 1px solid rgba(%1, %2, %3, 0.4);"
+                                                  " border-radius: 8px; padding: 6px 12px; }")
+                                       .arg(c.aviso.red()).arg(c.aviso.green()).arg(c.aviso.blue()));
+
+    // Tabla dentro de una pila: si no hay movimientos, se ve el estado vacío
+    pilaTabla_ = new QStackedWidget(ui->tabMovimientos);
+    auto* capa = ui->tablaMovimientos->parentWidget()->layout();
+    capa->replaceWidget(ui->tablaMovimientos, pilaTabla_);
+    pilaTabla_->addWidget(ui->tablaMovimientos);
+    vacio_ = new tema::EstadoVacio(QStringLiteral("dinero"), QString(), QString(), QString(), pilaTabla_);
+    pilaTabla_->addWidget(vacio_);
+    connect(vacio_, &tema::EstadoVacio::accion, this, [this] {
+        if (modelo_->rowCount() > 0) {
+            ui->inputBuscar->clear();
+            ui->comboFiltroTipo->setCurrentIndex(0);
+        } else {
+            nuevoGasto();
+        }
+    });
+    ui->tablaMovimientos->verticalHeader()->setDefaultSectionSize(ui->tablaMovimientos->fontMetrics().height() + 12);
 }
 
 void VentanaPrincipal::menuContextual(const QPoint& pos)

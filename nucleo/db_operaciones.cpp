@@ -255,6 +255,20 @@ Resultado Cuentas::eliminarMovimiento(qint64 id)
     }
 }
 
+Resultado Cuentas::restaurarMovimiento(qint64 id)
+{
+    try {
+        Transaccion t(db_);
+        QSqlQuery q = consulta(db_, "UPDATE movimientos SET borrado = 0 WHERE id = ? AND borrado = 1", {id});
+        if (q.numRowsAffected() == 0) return {false, QStringLiteral("El movimiento no se puede recuperar."), id};
+        marcar("movimientos", id);
+        t.confirmar();
+        return {true, QString(), id};
+    } catch (const std::exception& e) {
+        return {false, errorAmigable(e), id};
+    }
+}
+
 // ====================================================================== saldo y totales
 
 Centavos Cuentas::saldoInicial() const
