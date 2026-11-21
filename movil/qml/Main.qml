@@ -124,6 +124,11 @@ ApplicationWindow {
                     onClicked: { menu.close(); ventana.abrir(modelData.accion) }
                 }
             }
+            ItemMenu {   // qué cambió e informe de fallas; dejarlo apretado prende el modo Sebastián (escondido)
+                text: "Novedades"
+                onClicked: { menu.close(); novedades.abrirTodas() }
+                onPressAndHold: novedades.alternarDesarrollador()
+            }
             Rectangle { Layout.fillWidth: true; Layout.topMargin: 8; Layout.bottomMargin: 8; Layout.preferredHeight: 1; color: ventana.borde }
             ItemMenu {   // el menú queda abierto: se ve el cambio enseguida
                 text: Tema.textoAlternar
@@ -244,6 +249,9 @@ ApplicationWindow {
     Component { id: paginaCuentas; PaginaCuentas {} }
     Component { id: paginaFijos; PaginaFijos {} }
     Component { id: editorFijo; EditorFijo {} }
+    // Lo nuevo de esta versión: se abre solo la primera vez (comun/ui/qml/DialogoNovedades.qml)
+    DialogoNovedades { id: novedades }
+
     Component { id: paginaApps; PaginaApps { conBarra: true; nombreApp: "Ingresos y Gastos" } }
 
     // Versión nueva de la app (se busca cada vez que se abre: marca el menú; pregunta como mucho una vez por día)

@@ -1,5 +1,7 @@
 // Ingresos y Gastos: punto de entrada.
+#include "Fallas.h"
 #include "PanelApps.h"
+#include "VentanaNovedades.h"
 #include "Traducciones.h"
 #include "db.h"
 #include "ventanaprincipal.h"
@@ -23,6 +25,7 @@ int main(int argc, char* argv[])
     QApplication::setDesktopFileName(QStringLiteral("ingresos-gastos"));   // ícono correcto en la barra de Plasma
     tema::aplicar(app, QColor(0x4a, 0x90, 0xe2));   // tema común (claro u oscuro) con el azul de la app (comun/ui)
     QApplication::setWindowIcon(QIcon::fromTheme(QStringLiteral("ingresos-gastos")));
+    soporte::iniciarFallas();       // si se cierra por una falla, manda un informe (comun/soporte)
 
     // Botones estándar de Qt (Sí, No, Cancelar...) en español
     QTranslator qtbase;
@@ -36,6 +39,8 @@ int main(int argc, char* argv[])
     const QString ruta = args.size() > 1 ? args.at(1) : Cuentas::rutaPorDefecto();
     Cuentas cuentas(ruta);
     if (!cuentas.abierta()) {
+        soporte::informar(QStringLiteral("base"), cuentas.errorApertura());
+        soporte::Fallas::instancia().enviarPendientes();      // se manda mientras se ve el mensaje
         QMessageBox::critical(nullptr, QStringLiteral("Ingresos y Gastos"),
                               QStringLiteral("No se pudo abrir la base de datos:\n%1\n\n%2").arg(ruta, cuentas.errorApertura()));
         return 1;
@@ -46,7 +51,9 @@ int main(int argc, char* argv[])
     ventana.show();
     // Una vez por día: si hay una versión nueva, pregunta y la instala (pkexec pacman -U). Acá y no en la
     // ventana, para que las pruebas (que crean la ventana) no salgan a internet.
-    if (args.size() <= 1)
+    if (args.size() <= 1) {
         apps::avisarActualizaciones(&ventana, QStringLiteral("ingresos-gastos"));
+        soporte::novedadesAlAbrir(&ventana);    // la primera vez que se abre una versión nueva: qué cambió
+    }
     return app.exec();
 }

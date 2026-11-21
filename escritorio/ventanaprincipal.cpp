@@ -20,6 +20,7 @@
 #include <QInputDialog>
 #include <QMenu>
 #include "PanelApps.h"
+#include "VentanaNovedades.h"
 #include <QMessageBox>
 #include <QPainter>
 #include <QSaveFile>
@@ -276,6 +277,8 @@ void VentanaPrincipal::armarMenu()
     menu->addSeparator();
     // Actualizar esta app e instalar las otras (comun/apps)
     menu->addAction(tr("Apps y actualizaciones…"), this, [this] { (new apps::DialogoApps(QStringLiteral("ingresos-gastos"), this))->show(); });
+    // Qué cambió en cada versión y «Enviar informe de fallas» (comun/soporte)
+    menu->addAction(tema::icono(QStringLiteral("regalo")), tr("Novedades…"), this, [this] { soporte::mostrarNovedades(this); });
     menu->addAction(ui->actionAcerca);
     QAction* salir = menu->addAction(QIcon::fromTheme(QStringLiteral("application-exit")), tr("Salir"));
     salir->setShortcut(QKeySequence::Quit);

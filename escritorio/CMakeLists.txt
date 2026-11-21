@@ -16,6 +16,7 @@ target_compile_options(igescritorio PRIVATE -Wall -Wextra)
 
 add_executable(ingresos-gastos main.cpp)
 target_link_libraries(ingresos-gastos PRIVATE igescritorio)
+comun_novedades(ingresos-gastos ${CMAKE_SOURCE_DIR}/NOVEDADES.md)   # qué cambió en cada versión (comun/soporte)
 target_compile_options(ingresos-gastos PRIVATE -Wall -Wextra)
 
 install(TARGETS ingresos-gastos RUNTIME DESTINATION bin)

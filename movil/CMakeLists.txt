@@ -36,6 +36,7 @@ target_link_libraries(igmovil PUBLIC igcore Qt6::Quick Qt6::QuickControls2 Qt6::
 
 qt_add_executable(ingresos-gastos-movil main.cpp)
 target_link_libraries(ingresos-gastos-movil PRIVATE igmovil igmovilplugin)
+comun_novedades(ingresos-gastos-movil ${CMAKE_SOURCE_DIR}/NOVEDADES.md)   # qué cambió en cada versión (comun/soporte)
 
 # Android (Qt 6.9 o más nuevo): nombre, ícono y paquete de la app. En la PC se ignoran.
 # versionCode sale de la versión (2.1.0 -> 20100): Android solo instala encima si es mayor que el
