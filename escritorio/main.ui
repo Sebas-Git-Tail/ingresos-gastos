@@ -68,7 +68,7 @@
       <item>
        <widget class="QComboBox" name="comboVista">
         <property name="toolTip">
-         <string>Ver un mes, un año o todo</string>
+         <string>Ver un mes, un año, todo o las fechas que elijas</string>
         </property>
         <item>
          <property name="text">
@@ -83,6 +83,11 @@
         <item>
          <property name="text">
           <string>Todo</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Entre fechas…</string>
          </property>
         </item>
        </widget>
@@ -201,6 +206,13 @@
            </property>
           </widget>
          </item>
+         <item>
+          <widget class="QLabel" name="labelIngresosComparacion">
+           <property name="text">
+            <string/>
+           </property>
+          </widget>
+         </item>
         </layout>
        </widget>
       </item>
@@ -230,6 +242,13 @@
            </property>
           </widget>
          </item>
+         <item>
+          <widget class="QLabel" name="labelGastosComparacion">
+           <property name="text">
+            <string/>
+           </property>
+          </widget>
+         </item>
         </layout>
        </widget>
       </item>
@@ -256,6 +275,13 @@
            </property>
            <property name="text">
             <string>$ 0,00</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="labelResultadoComparacion">
+           <property name="text">
+            <string/>
            </property>
           </widget>
          </item>
@@ -289,7 +315,7 @@
           <item>
            <widget class="QLineEdit" name="inputBuscar">
             <property name="placeholderText">
-             <string>Buscar por descripción, categoría o monto…</string>
+             <string>Buscar por descripción, categoría, #etiqueta o monto (también 1000-5000, &gt;20000)…</string>
             </property>
             <property name="clearButtonEnabled">
              <bool>true</bool>
@@ -311,6 +337,11 @@
             <item>
              <property name="text">
               <string>Solo gastos</string>
+             </property>
+            </item>
+            <item>
+             <property name="text">
+              <string>Solo transferencias</string>
              </property>
             </item>
            </widget>
@@ -358,6 +389,16 @@
             </property>
             <property name="text">
              <string>− Gasto</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnNuevaTransferencia">
+            <property name="toolTip">
+             <string>Pasar plata de una cuenta a otra (Ctrl+T). No cuenta como ingreso ni como gasto.</string>
+            </property>
+            <property name="text">
+             <string>Transferencia</string>
             </property>
            </widget>
           </item>
@@ -519,6 +560,11 @@
             <column>
              <property name="text">
               <string>%</string>
+             </property>
+            </column>
+            <column>
+             <property name="text">
+              <string>Antes</string>
              </property>
             </column>
            </widget>

@@ -8,6 +8,8 @@ add_library(igescritorio STATIC
     dialogosincronizacion.h dialogosincronizacion.cpp dialogo_sincronizacion.ui
     dialogocuentas.h dialogocuentas.cpp dialogo_cuentas.ui
     dialogofijos.h dialogofijos.cpp dialogo_fijos.ui dialogo_fijo.ui
+    dialogotransferencia.h dialogotransferencia.cpp dialogo_transferencia.ui
+    dialogofechas.h dialogofechas.cpp dialogo_fechas.ui
     ventanaprincipal.h ventanaprincipal.cpp main.ui
 )
 target_include_directories(igescritorio PUBLIC .)

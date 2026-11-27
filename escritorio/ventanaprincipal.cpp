@@ -6,8 +6,11 @@
 #include "dialogocategorias.h"
 #include "dialogocuentas.h"
 #include "dialogofijos.h"
+#include "dialogofechas.h"
 #include "dialogomovimiento.h"
 #include "dialogosincronizacion.h"
+#include "dialogotransferencia.h"
+#include "reportes.h"
 #include "sincronizacion.h"
 #include "dinero.h"
 #include "graficos.h"
@@ -39,7 +42,8 @@ enum Columna { ColFecha, ColTipo, ColCategoria, ColDescripcion, ColMonto, COLUMN
 constexpr int RolId = Qt::UserRole + 1;        // id del movimiento (en la columna Fecha)
 constexpr int RolOrden = Qt::UserRole + 2;     // valor para ordenar
 constexpr int RolBusqueda = Qt::UserRole + 3;  // texto normalizado para el buscador
-constexpr int RolTipo = Qt::UserRole + 4;      // 0 = ingreso, 1 = gasto
+constexpr int RolTipo = Qt::UserRole + 4;      // 0 = ingreso, 1 = gasto, 2 = transferencia
+constexpr int RolMonto = Qt::UserRole + 5;     // monto (positivo), para buscar «1000-5000» o «>20000»
 
 QIcon muestraColor(const QColor& color)
 {
@@ -113,7 +117,7 @@ bool leerArchivo(const QString& ruta, LecturaCsv* lectura, QString* error)
 
 } // namespace
 
-/** Buscador y filtro por tipo de la tabla de movimientos. */
+/** Buscador (palabras, #etiquetas y montos: «1000-5000», «>20000») y filtro por tipo de la tabla de movimientos. */
 class FiltroMovimientos : public QSortFilterProxyModel
 {
 public:
@@ -122,10 +126,10 @@ public:
     void setTexto(const QString& t)
     {
         beginFilterChange();
-        palabras_ = normalizar(t).split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        busqueda_ = Busqueda(t);
         endFilterChange(QSortFilterProxyModel::Direction::Rows);
     }
-    void setTipo(int t)                      // 0 = todos, 1 = ingresos, 2 = gastos
+    void setTipo(int t)                      // 0 = ingresos y gastos, 1 = ingresos, 2 = gastos, 3 = transferencias
     {
         beginFilterChange();
         tipo_ = t;
@@ -139,13 +143,12 @@ protected:
         const int tipo = i.data(RolTipo).toInt();
         if (tipo_ == 1 && tipo != 0) return false;
         if (tipo_ == 2 && tipo != 1) return false;
-        const QString texto = i.data(RolBusqueda).toString();
-        for (const QString& p : palabras_) if (!texto.contains(p)) return false;
-        return true;
+        if (tipo_ == 3 && tipo != 2) return false;
+        return busqueda_.coincide(i.data(RolBusqueda).toString(), i.data(RolMonto).toLongLong());
     }
 
 private:
-    QStringList palabras_;
+    Busqueda busqueda_;
     int tipo_ = 0;
 };
 
@@ -182,10 +185,13 @@ VentanaPrincipal::VentanaPrincipal(Cuentas& cuentas, QWidget* parent)
     connect(ui->btnAnterior, &QToolButton::clicked, this, [this] { moverPeriodo(-1); });
     connect(ui->btnSiguiente, &QToolButton::clicked, this, [this] { moverPeriodo(+1); });
     connect(ui->btnHoy, &QPushButton::clicked, this, [this] { setPeriodo(QDate::currentDate()); });
-    connect(ui->comboVista, qOverload<int>(&QComboBox::currentIndexChanged), this,
-            [this](int i) { setVista(Vista(i)); });
+    connect(ui->comboVista, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int i) {
+        if (Vista(i) == Vista::Rango) pedirRango();      // pide las fechas (si se cancela, vuelve a lo de antes)
+        else setVista(Vista(i));
+    });
     connect(ui->btnNuevoIngreso, &QPushButton::clicked, this, &VentanaPrincipal::nuevoIngreso);
     connect(ui->btnNuevoGasto, &QPushButton::clicked, this, &VentanaPrincipal::nuevoGasto);
+    connect(ui->btnNuevaTransferencia, &QPushButton::clicked, this, &VentanaPrincipal::nuevaTransferencia);
     connect(ui->btnEditar, &QPushButton::clicked, this, &VentanaPrincipal::editarSeleccionado);
     connect(ui->btnEliminar, &QPushButton::clicked, this, &VentanaPrincipal::eliminarSeleccionados);
     connect(ui->tablaMovimientos, &QTableView::doubleClicked, this, &VentanaPrincipal::editarSeleccionado);
@@ -242,12 +248,23 @@ VentanaPrincipal::VentanaPrincipal(Cuentas& cuentas, QWidget* parent)
     // La cuenta que se estaba mirando (si todavía existe)
     const qint64 cuenta = QSettings().value(QStringLiteral("ventana/cuenta"), 0).toLongLong();
     for (const CuentaDinero& c : cuentas_.cuentasDinero()) if (c.id == cuenta) cuentas_.verCuenta(cuenta);
-    // Movimientos fijos: al abrir y cada hora (por si queda abierto de un día para otro)
+    // Movimientos fijos y copia automática de la base: al abrir y cada hora (por si queda abierto de un día para otro)
     cargarFijos();
+    respaldar();
     auto* reloj = new QTimer(this);
-    connect(reloj, &QTimer::timeout, this, [this] { if (cargarFijos() > 0) refrescar(); });
+    connect(reloj, &QTimer::timeout, this, [this] {
+        if (cargarFijos() > 0) refrescar();
+        respaldar();
+    });
     reloj->start(60 * 60 * 1000);
     refrescar();
+}
+
+ResultadoRespaldo VentanaPrincipal::respaldar()
+{
+    const ResultadoRespaldo r = cuentas_.respaldoAutomatico(Cuentas::carpetaRespaldos(cuentas_.ruta()));
+    if (!r.ok) statusBar()->showMessage(tr("No se pudo hacer la copia automática: %1").arg(r.error), 10000);
+    return r;
 }
 
 int VentanaPrincipal::cargarFijos()
@@ -318,6 +335,7 @@ void VentanaPrincipal::armarAtajos()
 {
     new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_I), this, this, &VentanaPrincipal::nuevoIngreso);
     new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_G), this, this, &VentanaPrincipal::nuevoGasto);
+    new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_T), this, this, &VentanaPrincipal::nuevaTransferencia);
     new QShortcut(QKeySequence::Find, this, this, [this] {
         ui->tabWidget->setCurrentWidget(ui->tabMovimientos);
         ui->inputBuscar->setFocus();
@@ -358,6 +376,32 @@ void VentanaPrincipal::moverPeriodo(int pasos)
 {
     if (vista_ == Vista::Mes) setPeriodo(periodo_.addMonths(pasos));
     else if (vista_ == Vista::Anio) setPeriodo(periodo_.addYears(pasos));
+    else if (vista_ == Vista::Rango) {
+        const qint64 dias = desdeRango_.daysTo(hastaRango_) + 1;   // los mismos días, antes o después
+        verRango(desdeRango_.addDays(pasos * dias), hastaRango_.addDays(pasos * dias));
+    }
+}
+
+void VentanaPrincipal::verRango(const QDate& desde, const QDate& hasta)
+{
+    if (!desde.isValid() || !hasta.isValid()) return;
+    desdeRango_ = std::min(desde, hasta);
+    hastaRango_ = std::max(desde, hasta);
+    periodo_ = QDate(desdeRango_.year(), desdeRango_.month(), 1);
+    setVista(Vista::Rango);
+}
+
+void VentanaPrincipal::pedirRango()
+{
+    const auto [desde, hasta] = rango();
+    DialogoFechas d(DialogoFechas::Modo::Rango, textoPeriodo(), desde.isValid() ? desde : desdeRango_,
+                    hasta.isValid() ? hasta : hastaRango_, this);
+    if (d.exec() == QDialog::Accepted) {
+        verRango(d.desde(), d.hasta());
+        return;
+    }
+    const QSignalBlocker b(ui->comboVista);              // cancelado: el combo vuelve a lo que se estaba viendo
+    ui->comboVista->setCurrentIndex(int(vista_));
 }
 
 QPair<QDate, QDate> VentanaPrincipal::rango() const
@@ -365,6 +409,9 @@ QPair<QDate, QDate> VentanaPrincipal::rango() const
     switch (vista_) {
     case Vista::Mes: return {periodo_, periodo_.addMonths(1).addDays(-1)};
     case Vista::Anio: return {QDate(periodo_.year(), 1, 1), QDate(periodo_.year(), 12, 31)};
+    case Vista::Rango:
+        if (desdeRango_.isValid() && hastaRango_.isValid()) return {desdeRango_, hastaRango_};
+        return {periodo_, periodo_.addMonths(1).addDays(-1)};   // sin fechas elegidas todavía: el mes
     case Vista::Todo: break;
     }
     return {QDate(), QDate()};
@@ -375,6 +422,10 @@ QString VentanaPrincipal::textoPeriodo() const
     switch (vista_) {
     case Vista::Mes: return QStringLiteral("%1 %2").arg(nombreMes(periodo_.month())).arg(periodo_.year());
     case Vista::Anio: return QString::number(periodo_.year());
+    case Vista::Rango: {
+        const auto [desde, hasta] = rango();
+        return nombrePeriodo(desde, hasta);
+    }
     case Vista::Todo: break;
     }
     return tr("Todos los movimientos");
@@ -388,9 +439,11 @@ void VentanaPrincipal::refrescar()
     const bool navegable = vista_ != Vista::Todo;
     ui->btnAnterior->setEnabled(navegable);
     ui->btnSiguiente->setEnabled(navegable);
-    ui->btnHoy->setEnabled(navegable);
-    ui->btnAnterior->setToolTip(vista_ == Vista::Anio ? tr("Año anterior (Alt+←)") : tr("Mes anterior (Alt+←)"));
-    ui->btnSiguiente->setToolTip(vista_ == Vista::Anio ? tr("Año siguiente (Alt+→)") : tr("Mes siguiente (Alt+→)"));
+    ui->btnHoy->setEnabled(vista_ == Vista::Mes || vista_ == Vista::Anio);
+    ui->btnAnterior->setToolTip(vista_ == Vista::Anio ? tr("Año anterior (Alt+←)")
+                                : vista_ == Vista::Rango ? tr("Los mismos días, antes (Alt+←)") : tr("Mes anterior (Alt+←)"));
+    ui->btnSiguiente->setToolTip(vista_ == Vista::Anio ? tr("Año siguiente (Alt+→)")
+                                 : vista_ == Vista::Rango ? tr("Los mismos días, después (Alt+→)") : tr("Mes siguiente (Alt+→)"));
 
     cargarCuentas();
     cargarMovimientos();
@@ -409,6 +462,7 @@ void VentanaPrincipal::cargarCuentas()
     for (const CuentaDinero& c : lista) ui->comboCuenta->addItem(c.nombre, c.id);
     ui->comboCuenta->setCurrentIndex(qMax(0, ui->comboCuenta->findData(cuentas_.cuentaVista())));
     ui->comboCuenta->setVisible(lista.size() > 1);      // con una sola cuenta no hace falta elegir
+    ui->btnNuevaTransferencia->setVisible(lista.size() > 1);   // ni hay a dónde transferir
 }
 
 void VentanaPrincipal::cargarAvisos()
@@ -448,16 +502,19 @@ void VentanaPrincipal::cargarMovimientos()
         auto* fecha = new QStandardItem(m.fecha.toString(QStringLiteral("dd/MM/yyyy")));
         fecha->setData(m.id, RolId);
         fecha->setData(m.fecha.toString(Qt::ISODate) + QStringLiteral("-%1").arg(m.id, 12, 10, QLatin1Char('0')), RolOrden);
-        fecha->setData(ingreso ? 0 : 1, RolTipo);
-        fecha->setData(normalizar(QStringList{m.categoria, m.descripcion, textoTipo(m.tipo), formatearPesos(m.monto),
-                                              formatearNumero(m.monto), m.fecha.toString(QStringLiteral("dd/MM/yyyy"))}
-                                      .join(QLatin1Char(' '))),
-                       RolBusqueda);
+        fecha->setData(m.transferencia ? 2 : ingreso ? 0 : 1, RolTipo);
+        fecha->setData(textoBusqueda(m), RolBusqueda);
+        fecha->setData(m.monto, RolMonto);
 
-        auto* tipo = new QStandardItem(textoTipo(m.tipo));
-        tipo->setData(textoTipo(m.tipo), RolOrden);
-        auto* cat = new QStandardItem(muestraColor(colorCategoria(tema, m.color)), m.categoria);
-        cat->setData(normalizar(m.categoria), RolOrden);
+        const QString textoTipoFila = m.transferencia ? tr("Transferencia") : textoTipo(m.tipo);
+        auto* tipo = new QStandardItem(textoTipoFila);
+        tipo->setData(textoTipoFila, RolOrden);
+        const QString categoria = textoCategoria(m);   // en una transferencia: «Transferencia a Banco»
+        auto* cat = new QStandardItem(m.transferencia ? tema::icono(QStringLiteral("cuenta"), tema::colores().texto3)
+                                                      : muestraColor(colorCategoria(tema, m.color)),
+                                      categoria);
+        cat->setData(normalizar(categoria), RolOrden);
+        if (m.transferencia && !m.cuenta.isEmpty()) cat->setToolTip(tr("Cuenta: %1").arg(m.cuenta));
         auto* desc = new QStandardItem(m.descripcion);
         desc->setData(normalizar(m.descripcion), RolOrden);
         auto* monto = new QStandardItem(formatearPesosConSigno(conSigno));
@@ -492,6 +549,33 @@ void VentanaPrincipal::cargarTarjetas()
     pintarMonto(ui->labelIngresos, t.ingresos);
     pintarMonto(ui->labelGastos, -t.gastos);
     pintarMonto(ui->labelResultado, t.saldo());
+
+    // Comparación con el período anterior (el mes, el año o los mismos días antes); en «Todo» no hay
+    const QPair<QDate, QDate> anterior = periodoAnterior(desde, hasta);
+    const QDate desdeAntes = anterior.first, hastaAntes = anterior.second;   // variables comunes: las lambdas las capturan
+    if (desdeAntes.isValid()) {
+        const TotalPeriodo a = cuentas_.totales(desdeAntes, hastaAntes);
+        const QString contra = textoPeriodoAnterior(desde, hasta);
+        const tema::Colores& col = tema::colores();
+        // Más ingresos es bueno (verde); más gastos, malo (rojo)
+        const auto comparar = [&](QLabel* label, Centavos ahora, Centavos antes, bool masEsBueno) {
+            const QString v = textoVariacion(ahora, antes);
+            const int s = signoVariacion(ahora, antes);
+            label->setText(v.isEmpty() ? tr("Sin datos %1").arg(contra) : tr("%1 que %2").arg(v, contra));
+            const QColor c = s == 0 ? col.texto3 : ((s > 0) == masEsBueno ? col.ok : col.error);
+            label->setStyleSheet(QStringLiteral("QLabel { color: %1; }").arg(c.name()));
+            label->setToolTip(tr("%1: %2").arg(nombrePeriodo(desdeAntes, hastaAntes), formatearPesos(antes)));
+            label->show();
+        };
+        comparar(ui->labelIngresosComparacion, t.ingresos, a.ingresos, true);
+        comparar(ui->labelGastosComparacion, t.gastos, a.gastos, false);
+        ui->labelResultadoComparacion->setText(tr("%1: %2").arg(contra.startsWith(QLatin1String("en ")) ? contra.mid(3) : contra,
+                                                                 formatearPesosConSigno(a.saldo())));
+        ui->labelResultadoComparacion->setStyleSheet(QStringLiteral("QLabel { color: %1; }").arg(col.texto3.name()));
+        ui->labelResultadoComparacion->show();
+    } else {
+        for (QLabel* l : {ui->labelIngresosComparacion, ui->labelGastosComparacion, ui->labelResultadoComparacion}) l->hide();
+    }
 
     const QDate hoy = QDate::currentDate();
     const Centavos saldo = cuentas_.saldo(hoy);
@@ -542,7 +626,27 @@ void VentanaPrincipal::cargarTarjetas()
 void VentanaPrincipal::cargarGraficos()
 {
     const QString periodo = textoPeriodo();
-    if (vista_ == Vista::Todo) {
+    if (vista_ == Vista::Rango) {
+        // Entre fechas: una barra por mes del rango (o por año, si son más de dos años)
+        const auto [desde, hasta] = rango();
+        mesesBarras_.clear();
+        barrasPorAnio_ = (hasta.year() - desde.year()) * 12 + hasta.month() - desde.month() >= 24;
+        QStringList etiquetas, detalles;
+        QVector<Centavos> ing, gas;
+        for (QDate d(desde.year(), barrasPorAnio_ ? 1 : desde.month(), 1); d <= hasta; d = barrasPorAnio_ ? d.addYears(1) : d.addMonths(1)) {
+            const QDate fin = barrasPorAnio_ ? QDate(d.year(), 12, 31) : d.addMonths(1).addDays(-1);
+            const TotalPeriodo t = cuentas_.totales(std::max(d, desde), std::min(fin, hasta));
+            mesesBarras_ << d;
+            etiquetas << (barrasPorAnio_ ? QString::number(d.year()) : QStringLiteral("%1 %2").arg(nombreMesCorto(d.month())).arg(d.year() % 100, 2, 10, QLatin1Char('0')));
+            detalles << (barrasPorAnio_ ? QString::number(d.year()) : QStringLiteral("%1 %2").arg(nombreMes(d.month())).arg(d.year()));
+            ing << t.ingresos;
+            gas << t.gastos;
+        }
+        ui->graficoBarras->setDatos(tr("Ingresos y gastos — %1").arg(periodo), etiquetas, detalles, ing, gas);
+        ui->graficoBarras->setMarcado(-1);
+        ui->graficoBarras->setTextoVacio(tr("Sin movimientos entre esas fechas"));
+        ui->graficoBarras->setToolTip(barrasPorAnio_ ? tr("Clic en un año para verlo") : tr("Clic en un mes para verlo"));
+    } else if (vista_ == Vista::Todo) {
         aniosBarras_.clear();
         QStringList etiquetas;
         QVector<Centavos> ing, gas;
@@ -607,32 +711,68 @@ void VentanaPrincipal::cargarTotales()
     ui->tablaMeses->setItem(12, 2, celdaMonto(formatearPesos(totalAnio.gastos), -totalAnio.gastos, true));
     ui->tablaMeses->setItem(12, 3, celdaMonto(formatearPesosConSigno(totalAnio.saldo()), totalAnio.saldo(), true));
 
-    // Por categoría (del período elegido)
+    // Por categoría (del período elegido), comparada con el período anterior; y las #etiquetas
     ui->labelTotalesCategorias->setText(tr("Por categoría — %1").arg(textoPeriodo()));
     const auto [desde, hasta] = rango();
+    const QPair<QDate, QDate> anterior = periodoAnterior(desde, hasta);
+    const QDate desdeAntes = anterior.first, hastaAntes = anterior.second;   // variables comunes: las lambdas las capturan
+    ui->tablaCategorias->horizontalHeaderItem(3)->setText(desdeAntes.isValid() ? tr("Antes") : QString());
+    ui->tablaCategorias->horizontalHeaderItem(3)->setToolTip(desdeAntes.isValid()
+        ? tr("Cuánto cambió %1").arg(textoPeriodoAnterior(desde, hasta).replace(QLatin1String("en "), tr("contra "))) : QString());
+    ui->tablaCategorias->setColumnHidden(3, !desdeAntes.isValid());
     ui->tablaCategorias->setRowCount(0);
-    auto agregarFila = [this](QTableWidgetItem* a, QTableWidgetItem* b, QTableWidgetItem* c) {
+    auto agregarFila = [this](QTableWidgetItem* a, QTableWidgetItem* b, QTableWidgetItem* c, QTableWidgetItem* d = nullptr) {
         const int r = ui->tablaCategorias->rowCount();
         ui->tablaCategorias->insertRow(r);
         ui->tablaCategorias->setItem(r, 0, a);
         ui->tablaCategorias->setItem(r, 1, b);
         ui->tablaCategorias->setItem(r, 2, c);
+        ui->tablaCategorias->setItem(r, 3, d ? d : celda(QString()));
+    };
+    // «+12 %» contra el período anterior; en gastos, subir es malo (rojo)
+    const auto celdaCambio = [&](Centavos ahora, Centavos antes, Tipo tipo, bool negrita) {
+        auto* it = celda(textoVariacion(ahora, antes), true, negrita);
+        const int s = signoVariacion(ahora, antes);
+        if (s != 0) it->setForeground((s > 0) == (tipo == Tipo::Ingreso) ? tema::colores().ok : tema::colores().error);
+        it->setToolTip(tr("%1: %2").arg(nombrePeriodo(desdeAntes, hastaAntes), formatearPesos(antes)));
+        return it;
     };
     for (Tipo tipo : {Tipo::Gasto, Tipo::Ingreso}) {
         const QList<TotalCategoria> lista = cuentas_.totalesPorCategoria(desde, hasta, tipo);
-        Centavos total = 0;
+        QHash<qint64, Centavos> antes;
+        Centavos total = 0, totalAntes = 0;
+        if (desdeAntes.isValid())
+            for (const TotalCategoria& tc : cuentas_.totalesPorCategoria(desdeAntes, hastaAntes, tipo)) {
+                antes.insert(tc.categoriaId, tc.total);
+                totalAntes += tc.total;
+            }
         for (const TotalCategoria& tc : lista) total += tc.total;
         const int signo = tipo == Tipo::Gasto ? -1 : 1;
         if (ui->tablaCategorias->rowCount() > 0) agregarFila(celda(QString()), celda(QString()), celda(QString()));
         agregarFila(celda(tipo == Tipo::Gasto ? tr("Gastos") : tr("Ingresos"), false, true),
-                    celdaMonto(formatearPesos(total), signo * total, true), celda(QString()));
+                    celdaMonto(formatearPesos(total), signo * total, true), celda(QString()),
+                    celdaCambio(total, totalAntes, tipo, true));
         for (const TotalCategoria& tc : lista) {
             if (tc.total <= 0) continue;
             auto* nombre = celda(tc.nombre);
             nombre->setIcon(muestraColor(colorCategoria(tema, tc.color)));
             const double pct = total > 0 ? 100.0 * double(tc.total) / double(total) : 0;
             agregarFila(nombre, celdaMonto(formatearPesos(tc.total), signo * tc.total),
-                        celda(QString::number(pct, 'f', 1).replace(QLatin1Char('.'), QLatin1Char(',')) + QStringLiteral(" %"), true));
+                        celda(QString::number(pct, 'f', 1).replace(QLatin1Char('.'), QLatin1Char(',')) + QStringLiteral(" %"), true),
+                        celdaCambio(tc.total, antes.value(tc.categoriaId), tipo, false));
+        }
+    }
+    // #etiquetas de las descripciones (si hay): cuánto se movió con cada una
+    const QList<TotalEtiqueta> etiquetas = cuentas_.totalesPorEtiqueta(desde, hasta);
+    if (!etiquetas.isEmpty()) {
+        agregarFila(celda(QString()), celda(QString()), celda(QString()));
+        agregarFila(celda(tr("Etiquetas"), false, true), celda(QString()), celda(QString()));
+        for (const TotalEtiqueta& e : etiquetas) {
+            auto* nombre = celda(e.nombre);
+            nombre->setIcon(tema::icono(QStringLiteral("etiqueta"), tema::colores().texto3));
+            nombre->setToolTip(tr("Ingresos %1 · Gastos %2").arg(formatearPesos(e.ingresos), formatearPesos(e.gastos)));
+            agregarFila(nombre, celdaMonto(formatearPesosConSigno(e.saldo()), e.saldo()),
+                        celda(tr("%n mov.", nullptr, e.movimientos), true));
         }
     }
 
@@ -667,6 +807,12 @@ void VentanaPrincipal::actualizarBotones()
 void VentanaPrincipal::clicEnBarras(int indice)
 {
     if (indice < 0) return;
+    if (vista_ == Vista::Rango) {
+        if (indice >= mesesBarras_.size()) return;
+        periodo_ = mesesBarras_[indice];
+        setVista(barrasPorAnio_ ? Vista::Anio : Vista::Mes);
+        return;
+    }
     if (vista_ == Vista::Todo) {
         if (indice >= aniosBarras_.size()) return;
         periodo_ = QDate(aniosBarras_[indice], 1, 1);
@@ -723,10 +869,49 @@ void VentanaPrincipal::nuevo(Tipo tipo)
                                                            guardado.categoria), 5000);
 }
 
+void VentanaPrincipal::nuevaTransferencia()
+{
+    if (cuentas_.cuentasDinero().size() < 2) {
+        QMessageBox::information(this, tr("Transferencia"),
+                                 tr("Para pasar plata de una cuenta a otra hacen falta dos cuentas. Creá otra en el menú, en «Cuentas…»."));
+        return;
+    }
+    Transferencia t;
+    const auto [desde, hasta] = rango();
+    const QDate hoy = QDate::currentDate();
+    t.fecha = (!desde.isValid() || (hoy >= desde && hoy <= hasta)) ? hoy : desde;
+    DialogoTransferencia d(cuentas_, t, this);
+    if (d.exec() != QDialog::Accepted) return;
+    ui->tabWidget->setCurrentWidget(ui->tabMovimientos);
+    refrescar();
+    seleccionarMovimiento(d.transferencia().id);
+    statusBar()->showMessage(tr("Transferencia guardada: %1").arg(formatearPesos(d.transferencia().monto)), 5000);
+}
+
+// Si el movimiento es una mitad de una transferencia, la edita (o repite) con su diálogo
+bool VentanaPrincipal::editarTransferencia(qint64 id, bool repetir)
+{
+    auto t = cuentas_.transferencia(id);
+    if (!t) return false;
+    if (repetir) {
+        t->id = 0;
+        t->fecha = QDate::currentDate();
+    }
+    DialogoTransferencia d(cuentas_, *t, this);
+    if (repetir) d.setWindowTitle(tr("Repetir transferencia"));
+    if (d.exec() == QDialog::Accepted) {
+        if (repetir) setPeriodo(d.transferencia().fecha);
+        else refrescar();
+        seleccionarMovimiento(d.transferencia().id);
+    }
+    return true;
+}
+
 void VentanaPrincipal::editarSeleccionado()
 {
     const QList<qint64> ids = idsSeleccionados();
     if (ids.size() != 1) return;
+    if (editarTransferencia(ids.first(), false)) return;
     const auto m = cuentas_.movimiento(ids.first());
     if (!m) return;
     DialogoMovimiento d(cuentas_, *m, this);
@@ -739,6 +924,7 @@ void VentanaPrincipal::repetirSeleccionado()
 {
     const QList<qint64> ids = idsSeleccionados();
     if (ids.size() != 1) return;
+    if (editarTransferencia(ids.first(), true)) return;
     auto m = cuentas_.movimiento(ids.first());
     if (!m) return;
     m->id = 0;
@@ -849,10 +1035,13 @@ void VentanaPrincipal::menuContextual(const QPoint& pos)
     QMenu menu(this);
     menu.addAction(tr("Nuevo ingreso"), this, &VentanaPrincipal::nuevoIngreso);
     menu.addAction(tr("Nuevo gasto"), this, &VentanaPrincipal::nuevoGasto);
+    if (cuentas_.cuentasDinero().size() > 1) menu.addAction(tr("Nueva transferencia"), this, &VentanaPrincipal::nuevaTransferencia);
     menu.addSeparator();
+    const auto elegido = n == 1 ? cuentas_.movimiento(idsSeleccionados().first()) : std::nullopt;
+    const bool esTransferencia = elegido && elegido->transferencia;
     menu.addAction(tr("Editar…"), this, &VentanaPrincipal::editarSeleccionado)->setEnabled(n == 1);
     menu.addAction(tr("Repetir con fecha de hoy…"), this, &VentanaPrincipal::repetirSeleccionado)->setEnabled(n == 1);
-    menu.addAction(tr("Repetir todos los meses…"), this, &VentanaPrincipal::repetirTodosLosMeses)->setEnabled(n == 1);
+    menu.addAction(tr("Repetir todos los meses…"), this, &VentanaPrincipal::repetirTodosLosMeses)->setEnabled(n == 1 && !esTransferencia);
     menu.addAction(tr("Eliminar"), this, &VentanaPrincipal::eliminarSeleccionados)->setEnabled(n > 0);
     menu.exec(ui->tablaMovimientos->viewport()->mapToGlobal(pos));
 }
@@ -879,7 +1068,7 @@ void VentanaPrincipal::repetirTodosLosMeses()
     const QList<qint64> ids = idsSeleccionados();
     if (ids.size() != 1) return;
     const auto m = cuentas_.movimiento(ids.first());
-    if (!m) return;
+    if (!m || m->transferencia) return;      // los fijos son ingresos o gastos
     Recurrente r;
     r.tipo = m->tipo;
     r.categoriaId = m->categoriaId;
@@ -931,6 +1120,11 @@ void VentanaPrincipal::pedirSaldoInicial()
 bool VentanaPrincipal::exportarArchivo(const QString& ruta, QString* error)
 {
     const auto [desde, hasta] = rango();
+    return exportarArchivo(ruta, desde, hasta, error);
+}
+
+bool VentanaPrincipal::exportarArchivo(const QString& ruta, const QDate& desde, const QDate& hasta, QString* error)
+{
     QList<Movimiento> lista = cuentas_.movimientos(desde, hasta);
     std::reverse(lista.begin(), lista.end());   // en el archivo, del más viejo al más nuevo
     QSaveFile f(ruta);
@@ -951,17 +1145,33 @@ void VentanaPrincipal::pedirExportar()
     QSettings s;
     const QString carpeta = s.value(QStringLiteral("carpetaCsv"),
                                     QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
+    // Qué exportar: lo que se ve, todo o entre dos fechas
+    auto [desde, hasta] = rango();
+    DialogoFechas fechas(DialogoFechas::Modo::Exportar, textoPeriodo(), desde, hasta, this);
+    if (fechas.exec() != QDialog::Accepted) return;
     QString nombre = QStringLiteral("movimientos");
-    if (vista_ == Vista::Mes) nombre += QStringLiteral("-%1-%2").arg(periodo_.year()).arg(periodo_.month(), 2, 10, QLatin1Char('0'));
-    else if (vista_ == Vista::Anio) nombre += QStringLiteral("-%1").arg(periodo_.year());
-    QString ruta = QFileDialog::getSaveFileName(this, tr("Exportar %1 a CSV").arg(textoPeriodo()),
+    if (fechas.alcance() == DialogoFechas::Todo) {
+        desde = hasta = QDate();
+        nombre += QStringLiteral("-todos");
+    } else if (fechas.alcance() == DialogoFechas::EntreFechas) {
+        desde = fechas.desde();
+        hasta = fechas.hasta();
+        nombre += QStringLiteral("-%1-al-%2").arg(desde.toString(Qt::ISODate), hasta.toString(Qt::ISODate));
+    } else if (vista_ == Vista::Mes) {
+        nombre += QStringLiteral("-%1-%2").arg(periodo_.year()).arg(periodo_.month(), 2, 10, QLatin1Char('0'));
+    } else if (vista_ == Vista::Anio) {
+        nombre += QStringLiteral("-%1").arg(periodo_.year());
+    } else if (vista_ == Vista::Rango) {
+        nombre += QStringLiteral("-%1-al-%2").arg(desde.toString(Qt::ISODate), hasta.toString(Qt::ISODate));
+    }
+    QString ruta = QFileDialog::getSaveFileName(this, tr("Exportar a CSV"),
                                                 carpeta + QLatin1Char('/') + nombre + QStringLiteral(".csv"),
                                                 tr("CSV (*.csv);;Todos los archivos (*)"));
     if (ruta.isEmpty()) return;
     if (QFileInfo(ruta).suffix().isEmpty()) ruta += QStringLiteral(".csv");
     s.setValue(QStringLiteral("carpetaCsv"), QFileInfo(ruta).absolutePath());
     QString error;
-    if (!exportarArchivo(ruta, &error)) {
+    if (!exportarArchivo(ruta, desde, hasta, &error)) {
         QMessageBox::warning(this, tr("Exportar"), tr("No se pudo guardar el archivo:\n%1").arg(error));
         return;
     }
@@ -1079,7 +1289,8 @@ void VentanaPrincipal::leerConfiguracion()
     restoreState(s.value(QStringLiteral("ventana/estado")).toByteArray());
     ui->tablaMovimientos->horizontalHeader()->restoreState(s.value(QStringLiteral("ventana/columnas")).toByteArray());
     ui->tabWidget->setCurrentIndex(s.value(QStringLiteral("ventana/pestania"), 0).toInt());
-    const int v = std::clamp(s.value(QStringLiteral("ventana/vista"), 0).toInt(), 0, 2);
+    int v = s.value(QStringLiteral("ventana/vista"), 0).toInt();
+    if (v < 0 || v > 2) v = 0;          // «Entre fechas» no se recuerda (las fechas se eligen cada vez)
     vista_ = Vista(v);
     const QSignalBlocker b(ui->comboVista);
     ui->comboVista->setCurrentIndex(v);

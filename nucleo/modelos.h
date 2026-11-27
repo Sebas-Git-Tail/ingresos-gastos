@@ -28,6 +28,22 @@ struct Movimiento {
     QString descripcion;
     qint64 cuentaId = 0;        // en qué cuenta (efectivo, banco...); 0 = la principal
     QString cuenta;             // nombre (se completa al listar)
+    // Una mitad de una transferencia entre cuentas (la salida es un «gasto» y la entrada un «ingreso», pero
+    // no cuentan en los totales ni en las tortas). Se completa al listar.
+    bool transferencia = false;
+    qint64 cuentaContrariaId = 0;   // la otra cuenta (a dónde fue o de dónde vino); 0 si no se sabe
+    QString cuentaContraria;
+};
+
+// Plata que pasa de una cuenta a otra (sacar del banco, cargar Mercado Pago...). En la base son dos
+// movimientos: la salida de una cuenta y la entrada en la otra.
+struct Transferencia {
+    qint64 id = 0;              // id de cualquiera de las dos mitades; 0 = una nueva
+    QDate fecha;
+    qint64 desde = 0;           // cuenta de la que sale
+    qint64 hasta = 0;           // cuenta a la que entra
+    Centavos monto = 0;
+    QString descripcion;
 };
 
 // Una cuenta de dinero: efectivo, banco, Mercado Pago... Siempre hay una (la principal).
@@ -73,6 +89,15 @@ struct TotalCategoria {
     Tipo tipo = Tipo::Gasto;
     int color = 0;
     Centavos total = 0;
+};
+
+// Lo que se movió con una etiqueta (#vacaciones) en un período
+struct TotalEtiqueta {
+    QString nombre;             // "#vacaciones" (como se escribió la primera vez)
+    Centavos ingresos = 0;
+    Centavos gastos = 0;
+    int movimientos = 0;
+    Centavos saldo() const { return ingresos - gastos; }
 };
 
 // Ingresos y gastos de un mes o de un año

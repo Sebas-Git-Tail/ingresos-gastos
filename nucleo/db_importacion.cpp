@@ -1,5 +1,6 @@
 // Base de datos: importar movimientos (CSV) y copia de seguridad.
 #include "db_interno.h"
+#include <QRegularExpression>
 
 using namespace dbi;
 
@@ -20,9 +21,10 @@ ResultadoImportacion Cuentas::procesarImportacion(const QList<FilaImportada>& fi
     for (const CuentaDinero& c : cuentasDinero()) idsCuenta.insert(normalizar(c.nombre), c.id);
     const qint64 cuentaPorDefecto = cuentaVista_ ? cuentaVista_ : cuentaPrincipal();
 
-    // Categorías por nombre (las que se vayan creando también)
+    // Categorías por nombre (las que se vayan creando también). Con las de las transferencias: un CSV exportado
+    // con transferencias vuelve a entrar en ellas (y no crea otra categoría «Transferencia»)
     QHash<QString, qint64> ids;
-    for (const Categoria& c : categorias()) ids.insert(textoBD(c.tipo) + QChar(0x1F) + normalizar(c.nombre), c.id);
+    for (const Categoria& c : todasLasCategorias()) ids.insert(textoBD(c.tipo) + QChar(0x1F) + normalizar(c.nombre), c.id);
 
     std::optional<Transaccion> t;
     if (guardar) t.emplace(db_);
@@ -39,6 +41,15 @@ ResultadoImportacion Cuentas::procesarImportacion(const QList<FilaImportada>& fi
         }
         const QString claveCategoria = textoBD(f.tipo) + QChar(0x1F) + normalizar(nombreCategoria);
         qint64 idCategoria = ids.value(claveCategoria);
+        if (idCategoria == 0 && normalizar(nombreCategoria) == normalizar(NOMBRE_TRANSFERENCIA)) {
+            // Un CSV exportado con transferencias en una base que todavía no tiene sus categorías: se crean
+            idCategoria = -1;
+            if (guardar) {
+                const auto [salida, entrada] = asegurarCategoriasTransferencia();
+                idCategoria = f.tipo == Tipo::Gasto ? salida : entrada;
+            }
+            ids.insert(claveCategoria, idCategoria);
+        }
         if (idCategoria == 0) {
             r.categoriasNuevas << QStringLiteral("%1: %2").arg(textoTipo(f.tipo), nombreCategoria);
             idCategoria = guardar ? insertarCategoria(nombreCategoria, f.tipo) : -1;   // en la vista previa alcanza con contarla
@@ -91,6 +102,44 @@ ResultadoImportacion Cuentas::importar(const QList<FilaImportada>& filas)
     } catch (const std::exception&) {
         return {};
     }
+}
+
+QString Cuentas::carpetaRespaldos(const QString& rutaBase)
+{
+    return QFileInfo(rutaBase).absolutePath() + QStringLiteral("/respaldos");
+}
+
+ResultadoRespaldo Cuentas::respaldoAutomatico(const QString& carpeta, const QDate& hoy, int cuantas)
+{
+    ResultadoRespaldo r;
+    if (ruta_ == QLatin1String(":memory:") || !hoy.isValid()) return r;
+    QDir dir(carpeta);
+    if (!dir.mkpath(QStringLiteral("."))) {
+        r.ok = false;
+        r.error = QStringLiteral("No se pudo crear la carpeta %1").arg(carpeta);
+        return r;
+    }
+    r.ruta = dir.filePath(QStringLiteral("cuentas-%1.db").arg(hoy.toString(Qt::ISODate)));
+    if (!QFileInfo::exists(r.ruta)) {
+        // Primero a un archivo aparte y después se renombra: si se corta a la mitad, no queda una copia rota
+        const QString temporal = r.ruta + QStringLiteral(".tmp");
+        const Resultado b = backup(temporal);
+        if (!b.ok || !QFile::rename(temporal, r.ruta)) {
+            QFile::remove(temporal);
+            r.ok = false;
+            r.error = b.ok ? QStringLiteral("No se pudo guardar %1").arg(r.ruta) : b.error;
+            return r;
+        }
+        r.hecha = true;
+    }
+    // Quedan las últimas: los nombres llevan la fecha, así que ordenados por nombre quedan de la más vieja a la más nueva
+    static const QRegularExpression patron(QStringLiteral(R"(^cuentas-\d{4}-\d{2}-\d{2}\.db$)"));
+    QStringList copias;
+    for (const QString& n : dir.entryList({QStringLiteral("cuentas-*.db")}, QDir::Files, QDir::Name))
+        if (patron.match(n).hasMatch()) copias << n;
+    while (copias.size() > std::max(1, cuantas))
+        if (dir.remove(copias.takeFirst())) ++r.borradas;
+    return r;
 }
 
 Resultado Cuentas::backup(const QString& destino)

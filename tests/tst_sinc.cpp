@@ -2,6 +2,8 @@
 #include "db.h"
 #include "sincronizacion.h"
 #include "dinero.h"
+#include <QJsonObject>
+#include <QSet>
 #include <QSignalSpy>
 #include <QSqlDatabase>
 #include <QSqlQuery>
@@ -455,6 +457,74 @@ private slots:
         for (const Movimiento& x : e.pc.movimientos())
             if (x.monto == 777) { encontrado = true; QVERIFY(x.cuenta.startsWith("Banco")); }
         QVERIFY(encontrado);
+    }
+
+    // ---- 2.8.0: las transferencias viajan como dos movimientos comunes (nada nuevo en el protocolo)
+    void transferenciasViajan()
+    {
+        Escenario e;
+        QVERIFY(e.emparejar());
+        QVERIFY(e.pc.crearCuentaDinero("Banco", 0).ok);
+        QVERIFY(e.sincronizar().ok);
+        const auto idCuenta = [](Cuentas& c, const QString& nombre) {
+            for (const CuentaDinero& k : c.cuentasDinero()) if (k.nombre == nombre) return k.id;
+            return qint64(0);
+        };
+        // Los dos hacen una transferencia antes de sincronizar: las categorías internas no se duplican
+        Transferencia t;
+        t.fecha = QDate(2026, 11, 10);
+        t.desde = e.pc.cuentaPrincipal();
+        t.hasta = idCuenta(e.pc, "Banco");
+        t.monto = 30000;
+        t.descripcion = "Depósito";
+        QVERIFY(e.pc.guardarTransferencia(t).ok);
+        Transferencia u = t;
+        u.desde = idCuenta(e.cel, "Banco");
+        u.hasta = e.cel.cuentaPrincipal();
+        u.monto = 1000;
+        u.descripcion = "Retiro";
+        QVERIFY(e.cel.guardarTransferencia(u).ok);
+        QVERIFY(e.sincronizar().ok);
+        QVERIFY(e.sincronizar().ok);
+        for (Cuentas* c : {&e.pc, &e.cel}) {
+            QCOMPARE(c->movimientos().size(), 4);
+            QCOMPARE(c->totales({}, {}).ingresos, Centavos(0));
+            QCOMPARE(c->totales({}, {}).gastos, Centavos(0));
+            QVERIFY(c->buscarCategoria("Transferencia entre cuentas", Tipo::Gasto).has_value());
+            QVERIFY(!c->buscarCategoria("Transferencia entre cuentas (2)", Tipo::Gasto).has_value());
+            for (const CuentaDinero& k : c->cuentasDinero())
+                QCOMPARE(k.saldo, k.principal ? Centavos(-29000) : Centavos(29000));
+        }
+        QCOMPARE(resumen(e.pc), resumen(e.cel));
+
+        // Lo que se manda son filas que ya conocían las versiones viejas (categorías y movimientos): una
+        // versión vieja ve una salida y una entrada en «Transferencia entre cuentas» y los saldos le dan igual
+        const QStringList conocidas{"cat", "cta", "mov", "rec", "cfg"};
+        const QSet<QString> camposMov{"t", "u", "mod", "aut", "del", "f", "cat", "mo", "d", "cu"};
+        for (const QJsonValue& v : e.pc.cambiosDesde(0)) {
+            const QJsonObject o = v.toObject();
+            QVERIFY(conocidas.contains(o.value("t").toString()));
+            if (o.value("t").toString() == "mov") {
+                const QStringList claves = o.keys();
+                QCOMPARE(QSet<QString>(claves.begin(), claves.end()), camposMov);
+            }
+        }
+
+        // Editar y borrar en el celular llega a la PC (las dos mitades)
+        qint64 idCel = 0;
+        for (const Movimiento& m : e.cel.movimientos()) if (m.descripcion == "Depósito") { idCel = m.id; break; }
+        auto te = e.cel.transferencia(idCel);
+        QVERIFY(te.has_value());
+        te->monto = 40000;
+        QVERIFY(e.cel.guardarTransferencia(*te).ok);
+        QVERIFY(e.sincronizar().ok);
+        int conMonto = 0;
+        for (const Movimiento& m : e.pc.movimientos()) if (m.monto == 40000) { ++conMonto; QVERIFY(m.transferencia); }
+        QCOMPARE(conMonto, 2);
+        QVERIFY(e.cel.eliminarMovimiento(idCel).ok);
+        QVERIFY(e.sincronizar().ok);
+        QCOMPARE(e.pc.movimientos().size(), 2);
+        QCOMPARE(resumen(e.pc), resumen(e.cel));
     }
 };
 

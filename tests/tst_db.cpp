@@ -1,4 +1,6 @@
 #include "db.h"
+#include "csv.h"
+#include "reportes.h"
 #include <QTemporaryDir>
 #include <QSqlQuery>
 #include <QSqlError>
@@ -439,6 +441,236 @@ private slots:
         QStringList cuentas;
         for (const Movimiento& m : c.movimientos()) cuentas << m.cuenta;
         QCOMPARE(cuentas, (QStringList{"Principal", "Mercado Pago"}));
+    }
+
+    // ---- 2.8.0: transferencias, etiquetas, respaldo automático, búsqueda por monto y comparación de períodos
+    void transferenciasNoSonIngresoNiGasto()
+    {
+        Cuentas c(":memory:");
+        const qint64 principal = c.cuentaPrincipal();
+        const qint64 banco = c.crearCuentaDinero("Banco", 100000).id;
+        QVERIFY(c.crearMovimiento(mov(c, {2026, 11, 1}, "Sueldo", Tipo::Ingreso, 500000)).ok);   // en la principal
+
+        Transferencia t;
+        t.fecha = QDate(2026, 11, 5);
+        t.desde = principal;
+        t.hasta = banco;
+        t.monto = 200000;
+        t.descripcion = "Depósito";
+        QVERIFY(!c.guardarTransferencia([&] { Transferencia x = t; x.hasta = principal; return x; }()).ok);   // misma cuenta
+        QVERIFY(!c.guardarTransferencia([&] { Transferencia x = t; x.monto = 0; return x; }()).ok);
+        const Resultado r = c.guardarTransferencia(t);
+        QVERIFY2(r.ok, qPrintable(r.error));
+
+        // No cuenta en los totales, las tortas ni los totales por mes o año...
+        QCOMPARE(c.totales({2026, 11, 1}, {2026, 11, 30}).ingresos, Centavos(500000));
+        QCOMPARE(c.totales({2026, 11, 1}, {2026, 11, 30}).gastos, Centavos(0));
+        QCOMPARE(c.totalesPorCategoria({2026, 11, 1}, {2026, 11, 30}, Tipo::Gasto).size(), 0);
+        QCOMPARE(c.totalesPorMes(2026)[10].gastos, Centavos(0));
+        QCOMPARE(c.totalesPorAnio().first().second.ingresos, Centavos(500000));
+        // ...ni aparece entre las categorías para elegir
+        for (const Categoria& k : c.categorias()) QVERIFY2(!k.nombre.startsWith("Transferencia"), qPrintable(k.nombre));
+        QVERIFY(!c.crearCategoria("Transferencia entre cuentas", Tipo::Gasto).ok);   // nombre reservado (ya existe)
+        QVERIFY(c.crearCategoria("Transferencia", Tipo::Gasto).ok);                   // una propia, aparte
+
+        // ...pero mueve la plata: cada cuenta con su saldo y, todas juntas, lo mismo que antes
+        const auto saldoDe = [&c](qint64 id) { for (const CuentaDinero& k : c.cuentasDinero()) if (k.id == id) return k.saldo; return Centavos(-1); };
+        QCOMPARE(saldoDe(principal), Centavos(500000 - 200000));
+        QCOMPARE(saldoDe(banco), Centavos(100000 + 200000));
+        QCOMPARE(c.saldo(QDate(2026, 12, 1)), Centavos(600000));
+        c.verCuenta(banco);
+        QCOMPARE(c.saldo(QDate(2026, 12, 1)), Centavos(300000));
+        QCOMPARE(c.totales({}, {}).ingresos, Centavos(0));            // mirando el banco: tampoco es un ingreso
+        c.verCuenta(0);
+
+        // Las dos mitades en la lista, cada una sabe de qué cuenta es la otra
+        const QList<Movimiento> lista = c.movimientos({2026, 11, 5}, {2026, 11, 5});
+        QCOMPARE(lista.size(), 2);
+        for (const Movimiento& m : lista) {
+            QVERIFY(m.transferencia);
+            QCOMPARE(m.descripcion, QString("Depósito"));
+            if (m.tipo == Tipo::Gasto) {
+                QCOMPARE(m.cuentaId, principal);
+                QCOMPARE(textoCategoria(m), QString("Transferencia a Banco"));
+            } else {
+                QCOMPARE(m.cuentaId, banco);
+                QCOMPARE(textoCategoria(m), QString("Transferencia desde Principal"));
+            }
+        }
+        // Se lee igual desde cualquiera de las dos mitades
+        const auto leida = c.transferencia(lista.last().id);
+        QVERIFY(leida.has_value());
+        QCOMPARE(leida->desde, principal);
+        QCOMPARE(leida->hasta, banco);
+        QCOMPARE(leida->monto, Centavos(200000));
+        QVERIFY(!c.transferencia(c.movimientos({2026, 11, 1}, {2026, 11, 1}).first().id).has_value());   // un ingreso común
+
+        // Editar cambia las dos mitades
+        Transferencia e = *leida;
+        e.monto = 150000;
+        e.desde = banco;
+        e.hasta = principal;
+        QVERIFY(c.guardarTransferencia(e).ok);
+        QCOMPARE(c.movimientos().size(), 3);
+        QCOMPARE(saldoDe(principal), Centavos(500000 + 150000));
+        QCOMPARE(saldoDe(banco), Centavos(100000 - 150000));
+        // No se puede editar como un movimiento común (su categoría no se elige)
+        Movimiento comun = *c.movimiento(lista.first().id);
+        QVERIFY(!c.actualizarMovimiento(comun).ok);
+
+        // Eliminar una mitad borra las dos; restaurar las devuelve a las dos
+        QVERIFY(c.eliminarMovimiento(lista.first().id).ok);
+        QCOMPARE(c.movimientos().size(), 1);
+        QCOMPARE(saldoDe(banco), Centavos(100000));
+        QVERIFY(c.restaurarMovimiento(lista.first().id).ok);
+        QCOMPARE(c.movimientos().size(), 3);
+        QCOMPARE(saldoDe(banco), Centavos(100000 - 150000));
+    }
+
+    void transferenciasEnElCsv()
+    {
+        Cuentas c(":memory:");
+        const qint64 banco = c.crearCuentaDinero("Banco").id;
+        Transferencia t;
+        t.fecha = QDate(2026, 11, 5);
+        t.desde = c.cuentaPrincipal();
+        t.hasta = banco;
+        t.monto = 5000;
+        QVERIFY(c.guardarTransferencia(t).ok);
+        QList<Movimiento> lista = c.movimientos();
+        std::reverse(lista.begin(), lista.end());
+        const LecturaCsv csv = leerCsv(movimientosACsv(lista));
+        QVERIFY(csv.ok);
+        QCOMPARE(csv.filas.size(), 2);
+
+        // En otra base vuelven a ser transferencias (no ingresos ni gastos) y los saldos dan igual
+        Cuentas otra(":memory:");
+        const ResultadoImportacion r = otra.importar(csv.filas);
+        QCOMPARE(r.nuevos, 2);
+        QVERIFY(r.categoriasNuevas.isEmpty());
+        QCOMPARE(otra.totales({}, {}).gastos, Centavos(0));
+        QCOMPARE(otra.saldo(QDate(2026, 12, 1)), Centavos(0));
+        for (const CuentaDinero& k : otra.cuentasDinero()) QCOMPARE(k.saldo, k.principal ? Centavos(-5000) : Centavos(5000));
+        QCOMPARE(otra.importar(csv.filas).repetidos, 2);              // no duplica
+
+        // Una mitad suelta (vino del CSV) se edita y queda una transferencia entera
+        const Movimiento suelta = otra.movimientos().first();
+        QVERIFY(suelta.transferencia);
+        QCOMPARE(textoCategoria(suelta), QString("Transferencia"));
+        auto te = otra.transferencia(suelta.id);
+        QVERIFY(te.has_value());
+        te->desde = otra.cuentaPrincipal();
+        te->hasta = otra.cuentasDinero().last().id;
+        QVERIFY(otra.guardarTransferencia(*te).ok);
+        QCOMPARE(otra.movimientos().size(), 3);                        // la suelta se reemplazó por dos
+    }
+
+    void totalesPorEtiqueta()
+    {
+        QCOMPARE(etiquetasDe("Pasajes #vacaciones #2026 y #Vacaciones otra vez"), (QStringList{"#vacaciones", "#2026"}));
+        QCOMPARE(etiquetasDe("sin etiquetas, ni un precio #"), QStringList());
+        QCOMPARE(etiquetasDe("#auto-nuevo"), QStringList{"#auto-nuevo"});
+        QCOMPARE(etiquetasDe("Pañales #bebé"), QStringList{"#bebé"});
+
+        Cuentas c(":memory:");
+        QVERIFY(c.crearMovimiento(mov(c, {2026, 1, 3}, "Transporte", Tipo::Gasto, 30000, "Micro #vacaciones")).ok);
+        QVERIFY(c.crearMovimiento(mov(c, {2026, 1, 5}, "Supermercado", Tipo::Gasto, 20000, "Compras #Vacaciones #playa")).ok);
+        QVERIFY(c.crearMovimiento(mov(c, {2026, 1, 9}, "Ingresos Varios", Tipo::Ingreso, 5000, "Devolución #vacaciones")).ok);
+        QVERIFY(c.crearMovimiento(mov(c, {2026, 2, 1}, "Supermercado", Tipo::Gasto, 99900, "#vacaciones de otro mes")).ok);
+        const QList<TotalEtiqueta> enero = c.totalesPorEtiqueta({2026, 1, 1}, {2026, 1, 31});
+        QCOMPARE(enero.size(), 2);
+        QCOMPARE(enero[0].nombre, QString("#vacaciones"));
+        QCOMPARE(enero[0].gastos, Centavos(50000));
+        QCOMPARE(enero[0].ingresos, Centavos(5000));
+        QCOMPARE(enero[0].movimientos, 3);
+        QCOMPARE(enero[1].nombre, QString("#playa"));
+        QCOMPARE(c.totalesPorEtiqueta({}, {}).first().gastos, Centavos(149900));
+    }
+
+    void respaldoAutomaticoDiarioConLasUltimasSiete()
+    {
+        QTemporaryDir dir;
+        Cuentas c(dir.filePath("cuentas.db"));
+        QVERIFY(c.crearMovimiento(mov(c, {2026, 11, 1}, "Sueldo", Tipo::Ingreso, 1000)).ok);
+        const QString carpeta = Cuentas::carpetaRespaldos(c.ruta());
+        QCOMPARE(carpeta, dir.filePath("respaldos"));
+        ResultadoRespaldo r = c.respaldoAutomatico(carpeta, {2026, 11, 1});
+        QVERIFY2(r.ok, qPrintable(r.error));
+        QVERIFY(r.hecha);
+        QVERIFY(QFile::exists(dir.filePath("respaldos/cuentas-2026-11-01.db")));
+        QVERIFY(!c.respaldoAutomatico(carpeta, {2026, 11, 1}).hecha);  // una por día
+        {
+            Cuentas copia(r.ruta);                                     // la copia se abre y tiene los datos
+            QCOMPARE(copia.movimientos().size(), 1);
+        }
+        // Diez días seguidos: quedan las últimas siete (y lo que no es una copia no se toca)
+        QFile otro(dir.filePath("respaldos/notas.txt"));
+        QVERIFY(otro.open(QIODevice::WriteOnly));
+        otro.close();
+        int borradas = 0;
+        for (int d = 2; d <= 10; ++d) borradas += c.respaldoAutomatico(carpeta, {2026, 11, d}).borradas;
+        QCOMPARE(borradas, 3);
+        const QStringList quedan = QDir(carpeta).entryList({"cuentas-*.db"}, QDir::Files, QDir::Name);
+        QCOMPARE(quedan.size(), 7);
+        QCOMPARE(quedan.first(), QString("cuentas-2026-11-04.db"));
+        QCOMPARE(quedan.last(), QString("cuentas-2026-11-10.db"));
+        QVERIFY(QFile::exists(dir.filePath("respaldos/notas.txt")));
+        QVERIFY(QDir(carpeta).entryList({"*.tmp"}, QDir::Files).isEmpty());
+
+        Cuentas memoria(":memory:");                                   // en memoria (pruebas): nada
+        QVERIFY(!memoria.respaldoAutomatico(dir.filePath("otra"), {2026, 11, 1}).hecha);
+        QVERIFY(!QDir(dir.filePath("otra")).exists());
+    }
+
+    void busquedaPorMonto()
+    {
+        const auto f = [](const QString& s) { return interpretarFiltroMonto(s); };
+        QVERIFY(!f("15000").has_value());                              // suelto: se busca como texto
+        QVERIFY(!f("coto").has_value());
+        QVERIFY(f("1000-2000")->coincide(150000));
+        QVERIFY(f("2000-1000")->coincide(100000));                     // al revés también
+        QVERIFY(!f("1000-2000")->coincide(200001));
+        QVERIFY(f("<3000")->coincide(299999));
+        QVERIFY(!f("<3000")->coincide(300000));
+        QVERIFY(f("<=3.000,50")->coincide(300050));
+        QVERIFY(!f(">2000")->coincide(200000));
+        QVERIFY(f(">=2000")->coincide(200000));
+        QVERIFY(!f(">abc").has_value());
+
+        Movimiento m;
+        m.fecha = QDate(2026, 3, 10);
+        m.categoria = "Supermercado";
+        m.descripcion = "Coto #mensual";
+        m.monto = 1543050;
+        m.cuenta = "Banco";
+        const QString texto = textoBusqueda(m);
+        QVERIFY(Busqueda("coto").coincide(texto, m.monto));
+        QVERIFY(Busqueda("SUPER >10000").coincide(texto, m.monto));
+        QVERIFY(!Busqueda("super >20000").coincide(texto, m.monto));
+        QVERIFY(Busqueda("15.430,50").coincide(texto, m.monto));
+        QVERIFY(Busqueda("#mensual 15000-16000").coincide(texto, m.monto));
+        QVERIFY(Busqueda("banco").coincide(texto, m.monto));
+        QVERIFY(Busqueda("").vacia());
+    }
+
+    void periodoAnteriorYVariacion()
+    {
+        using P = QPair<QDate, QDate>;
+        QCOMPARE(periodoAnterior({2026, 3, 1}, {2026, 3, 31}), (P{{2026, 2, 1}, {2026, 2, 28}}));
+        QCOMPARE(periodoAnterior({2026, 1, 1}, {2026, 1, 31}), (P{{2025, 12, 1}, {2025, 12, 31}}));
+        QCOMPARE(periodoAnterior({2026, 1, 1}, {2026, 12, 31}), (P{{2025, 1, 1}, {2025, 12, 31}}));
+        QCOMPARE(periodoAnterior({2026, 3, 11}, {2026, 3, 20}), (P{{2026, 3, 1}, {2026, 3, 10}}));
+        QCOMPARE(periodoAnterior({}, {}), P());
+        QCOMPARE(nombrePeriodo({2026, 10, 1}, {2026, 10, 31}), QString("octubre 2026"));
+        QCOMPARE(nombrePeriodo({2025, 1, 1}, {2025, 12, 31}), QString("2025"));
+        QCOMPARE(nombrePeriodo({2026, 3, 1}, {2026, 4, 15}), QString("1/3/2026 al 15/4/2026"));
+        QCOMPARE(textoVariacion(11200, 10000), QString("+12 %"));
+        QCOMPARE(textoVariacion(9500, 10000), QString("−5 %"));
+        QCOMPARE(textoVariacion(10000, 10000), QString("igual"));
+        QCOMPARE(textoVariacion(10000, 0), QString());
+        QCOMPARE(signoVariacion(11200, 10000), 1);
+        QCOMPARE(signoVariacion(9500, 10000), -1);
+        QCOMPARE(signoVariacion(5, 0), 0);
     }
 };
 

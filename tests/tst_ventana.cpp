@@ -4,9 +4,15 @@
 #include "dialogocategorias.h"
 #include "dialogocuentas.h"
 #include "dialogofijos.h"
+#include "dialogofechas.h"
 #include "dialogomovimiento.h"
+#include "dialogosincronizacion.h"
+#include "dialogotransferencia.h"
 #include "graficos.h"
+#include "csv.h"
+#include "sincronizacion.h"
 #include "ventanaprincipal.h"
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDateEdit>
 #include <QDialogButtonBox>
@@ -15,6 +21,7 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
+#include <QSignalSpy>
 #include <QRadioButton>
 #include <QStandardPaths>
 #include <QTableView>
@@ -408,6 +415,244 @@ private slots:
         QCOMPARE(c.generarRecurrentes(), 2);                        // el mes pasado y este
         DialogoFijos lista(c);
         QCOMPARE(lista.filas(), 1);
+    }
+
+    // ---- 2.8.0
+    void buscadorPorMonto()
+    {
+        Cuentas c(":memory:");
+        QVERIFY(c.crearMovimiento(mov(c, {2025, 3, 5}, "Sueldo", Tipo::Ingreso, 50000000, "Marzo")).ok);        // 500.000
+        QVERIFY(c.crearMovimiento(mov(c, {2025, 3, 10}, "Supermercado", Tipo::Gasto, 12345050, "Coto #mensual")).ok);   // 123.450,50
+        QVERIFY(c.crearMovimiento(mov(c, {2025, 3, 20}, "Transporte", Tipo::Gasto, 1500000, "SUBE")).ok);       // 15.000
+        QVERIFY(c.crearMovimiento(mov(c, {2025, 3, 21}, "Transporte", Tipo::Gasto, 250000, "Colectivo")).ok);   // 2.500
+        VentanaPrincipal v(c);
+        v.setVista(VentanaPrincipal::Vista::Mes);
+        v.setPeriodo({2025, 3, 1});
+        auto* tabla = v.findChild<QTableView*>("tablaMovimientos");
+        auto* buscar = v.findChild<QLineEdit*>("inputBuscar");
+        buscar->setText("1000-20000");
+        QCOMPARE(tabla->model()->rowCount(), 2);                 // 15.000 y 2.500
+        buscar->setText(">100000");
+        QCOMPARE(tabla->model()->rowCount(), 2);                 // sueldo y súper
+        buscar->setText("<=2.500");
+        QCOMPARE(tabla->model()->rowCount(), 1);
+        buscar->setText("transporte >10000");                    // palabra + monto
+        QCOMPARE(tabla->model()->rowCount(), 1);
+        QCOMPARE(tabla->model()->index(0, 3).data().toString(), QString("SUBE"));
+        buscar->setText("#mensual");                             // etiqueta
+        QCOMPARE(tabla->model()->rowCount(), 1);
+        buscar->setText("123.450,50");                           // un número suelto sigue buscando como texto
+        QCOMPARE(tabla->model()->rowCount(), 1);
+        buscar->setText(">1000000");                             // nada: el estado vacío
+        QCOMPARE(tabla->model()->rowCount(), 0);
+        buscar->clear();
+        QCOMPARE(tabla->model()->rowCount(), 4);
+    }
+
+    void ventanaDeSincronizacion()
+    {
+        QSettings().setValue("sinc/puerto", 0);                  // cualquier puerto libre (no choca con el programa real)
+        Cuentas pc(":memory:");
+        VentanaPrincipal w(pc);
+        {
+            DialogoSincronizacion d(pc, w.servidor());
+            d.show();
+            QVERIFY(!d.findChild<QCheckBox*>("chkActivar")->isChecked());
+            QVERIFY(d.findChild<QLabel*>("labelCodigo")->text().isEmpty());
+            d.findChild<QPushButton*>("btnEmparejar")->click();  // activa y muestra el código
+            QVERIFY(w.servidor().activo());
+            QVERIFY(d.findChild<QCheckBox*>("chkActivar")->isChecked());
+            QCOMPARE(d.findChild<QLabel*>("labelCodigo")->text().remove(' ').size(), 6);
+            QVERIFY(d.findChild<QLabel*>("labelEstado")->text().startsWith("Activada"));
+            d.findChild<QPushButton*>("btnEmparejar")->click();  // cancelar el código
+            QVERIFY(d.findChild<QLabel*>("labelCodigo")->text().isEmpty());
+            QCOMPARE(d.findChild<QListWidget*>("listaPares")->count(), 1);   // «Ninguno todavía»
+            QVERIFY(!d.findChild<QPushButton*>("btnQuitar")->isEnabled());
+        }
+        QVERIFY(QSettings().value("sinc/activa").toBool());     // se recuerda
+
+        // Un celular se empareja y sincroniza: la ventana se actualiza sola y el celular aparece en la lista
+        Cuentas cel(":memory:");
+        cel.setNombreDispositivo("Celu de prueba");
+        Movimiento m = mov(cel, {2026, 10, 1}, "Supermercado", Tipo::Gasto, 154350, "Cargado en el celular");
+        QVERIFY(cel.crearMovimiento(m).ok);
+        w.setVista(VentanaPrincipal::Vista::Todo);
+        auto* tabla = w.findChild<QTableView*>("tablaMovimientos");
+        QCOMPARE(tabla->model()->rowCount(), 0);
+        ClienteSinc cliente(cel);
+        QSignalSpy fin(&cliente, &ClienteSinc::terminado);
+        cliente.emparejar("127.0.0.1", w.servidor().puerto(), w.servidor().nuevoCodigo());
+        QVERIFY(fin.wait(15000));
+        QVERIFY2(fin.first().at(0).toBool(), qPrintable(fin.first().at(1).toString()));
+        QTRY_COMPARE(tabla->model()->rowCount(), 1);
+        {
+            DialogoSincronizacion d(pc, w.servidor());
+            auto* lista = d.findChild<QListWidget*>("listaPares");
+            QCOMPARE(lista->count(), 1);
+            QVERIFY(lista->item(0)->text().startsWith("Celu de prueba"));
+            lista->setCurrentRow(0);
+            QVERIFY(d.findChild<QPushButton*>("btnQuitar")->isEnabled());
+            d.findChild<QCheckBox*>("chkActivar")->setChecked(false);   // apagarla también se recuerda
+            QVERIFY(!w.servidor().activo());
+        }
+        QVERIFY(!QSettings().value("sinc/activa").toBool());
+    }
+
+    void transferenciaDesdeLaVentana()
+    {
+        Cuentas c(":memory:");
+        VentanaPrincipal w(c);
+        w.show();
+        auto* boton = w.findChild<QPushButton*>("btnNuevaTransferencia");
+        QVERIFY(boton->isHidden());                              // con una sola cuenta no hay a dónde transferir
+        const qint64 banco = c.crearCuentaDinero("Banco", 0).id;
+        QVERIFY(c.crearMovimiento(mov(c, QDate::currentDate(), "Sueldo", Tipo::Ingreso, 1000000)).ok);
+        w.setVista(VentanaPrincipal::Vista::Mes);
+        w.setPeriodo(QDate::currentDate());
+        QVERIFY(!boton->isHidden());
+
+        alAbrir<DialogoTransferencia>([banco](DialogoTransferencia* d) {
+            auto* monto = d->findChild<QLineEdit*>("inputMonto");
+            auto* guardar = d->findChild<QDialogButtonBox*>("botones")->button(QDialogButtonBox::Save);
+            auto* hasta = d->findChild<QComboBox*>("comboHasta");
+            QCOMPARE(hasta->currentData().toLongLong(), banco);   // de entrada, a la otra cuenta
+            hasta->setCurrentIndex(d->findChild<QComboBox*>("comboDesde")->currentIndex());
+            monto->setText("4.000");
+            guardar->click();                                     // misma cuenta: no se cierra
+            QVERIFY(d->isVisible());
+            QVERIFY(!d->findChild<QLabel*>("labelError")->text().isEmpty());
+            hasta->setCurrentIndex(hasta->findData(banco));
+            d->findChild<QLineEdit*>("inputDescripcion")->setText("Al banco");
+            guardar->click();
+        });
+        boton->click();
+        QCOMPARE(c.movimientos().size(), 3);
+        // Las tarjetas no cambian: no es ingreso ni gasto
+        QCOMPARE(w.findChild<QLabel*>("labelIngresos")->text(), QString("$ 10.000,00"));
+        QCOMPARE(w.findChild<QLabel*>("labelGastos")->text(), QString("$ 0,00"));
+        auto* tabla = w.findChild<QTableView*>("tablaMovimientos");
+        QStringList categorias;
+        for (int r = 0; r < tabla->model()->rowCount(); ++r) categorias << tabla->model()->index(r, 2).data().toString();
+        QVERIFY2(categorias.contains("Transferencia a Banco"), qPrintable(categorias.join(", ")));
+        QVERIFY(categorias.contains("Transferencia desde Principal"));
+        auto* filtro = w.findChild<QComboBox*>("comboFiltroTipo");
+        filtro->setCurrentIndex(3);                               // solo transferencias
+        QCOMPARE(tabla->model()->rowCount(), 2);
+        filtro->setCurrentIndex(2);                               // solo gastos: la transferencia no es un gasto
+        QCOMPARE(tabla->model()->rowCount(), 0);
+        filtro->setCurrentIndex(0);
+        // Mirando el banco, el saldo es lo que entró
+        auto* combo = w.findChild<QComboBox*>("comboCuenta");
+        combo->setCurrentIndex(combo->findData(banco));
+        emit combo->activated(combo->currentIndex());
+        QCOMPARE(w.findChild<QLabel*>("labelSaldo")->text(), QString("$ 4.000,00"));
+        combo->setCurrentIndex(0);
+        emit combo->activated(0);
+        QCOMPARE(w.findChild<QLabel*>("labelSaldo")->text(), QString("$ 10.000,00"));
+        // Borrar una mitad borra las dos (con «Deshacer» como siempre)
+        qint64 idTransf = 0;
+        for (const Movimiento& m : c.movimientos()) if (m.transferencia) idTransf = m.id;
+        QCOMPARE(w.eliminarMovimientos({idTransf}), 1);
+        QCOMPARE(c.movimientos().size(), 1);
+    }
+
+    void verEntreFechasYComparar()
+    {
+        Cuentas c(":memory:");
+        QVERIFY(c.crearMovimiento(mov(c, {2025, 2, 10}, "Supermercado", Tipo::Gasto, 100000)).ok);
+        QVERIFY(c.crearMovimiento(mov(c, {2025, 3, 10}, "Supermercado", Tipo::Gasto, 120000)).ok);
+        QVERIFY(c.crearMovimiento(mov(c, {2025, 3, 12}, "Sueldo", Tipo::Ingreso, 500000)).ok);
+        QVERIFY(c.crearMovimiento(mov(c, {2025, 4, 2}, "Transporte", Tipo::Gasto, 30000, "Viaje #vacaciones")).ok);
+        VentanaPrincipal w(c);
+        w.show();
+        w.setVista(VentanaPrincipal::Vista::Mes);
+        w.setPeriodo({2025, 3, 1});
+        // Marzo contra febrero: 20 % más de gastos (en rojo), ingresos sin nada antes
+        QCOMPARE(w.findChild<QLabel*>("labelGastosComparacion")->text(), QString("+20 % que en febrero 2025"));
+        QCOMPARE(w.findChild<QLabel*>("labelIngresosComparacion")->text(), QString("Sin datos en febrero 2025"));
+        QVERIFY(w.findChild<QLabel*>("labelResultadoComparacion")->text().startsWith("febrero 2025: -$ 1.000,00"));
+        auto* cats = w.findChild<QTableWidget*>("tablaCategorias");
+        QCOMPARE(cats->item(1, 0)->text(), QString("Supermercado"));
+        QCOMPARE(cats->item(1, 3)->text(), QString("+20 %"));
+        w.setVista(VentanaPrincipal::Vista::Todo);
+        QVERIFY(w.findChild<QLabel*>("labelGastosComparacion")->isHidden());   // en «Todo» no hay con qué comparar
+
+        // Entre fechas: del 1/3 al 15/4 (las tarjetas, la tabla y los gráficos de esos días)
+        w.verRango({2025, 3, 1}, {2025, 4, 15});
+        QCOMPARE(w.vista(), VentanaPrincipal::Vista::Rango);
+        QCOMPARE(w.findChild<QComboBox*>("comboVista")->currentIndex(), 3);
+        QCOMPARE(w.findChild<QLabel*>("labelPeriodo")->text(), QString("1/3/2025 al 15/4/2025"));
+        QCOMPARE(w.findChild<QTableView*>("tablaMovimientos")->model()->rowCount(), 3);
+        QCOMPARE(w.findChild<QLabel*>("labelGastos")->text(), QString("$ 1.500,00"));
+        QCOMPARE(w.findChild<QLabel*>("labelGastosComparacion")->text(), QString("+50 % que en los 46 días anteriores"));
+        auto* barras = w.findChild<GraficoBarras*>("graficoBarras");
+        QVERIFY(barras);
+        // Etiquetas en los totales
+        bool hayEtiqueta = false;
+        for (int r = 0; r < cats->rowCount(); ++r) if (cats->item(r, 0) && cats->item(r, 0)->text() == "#vacaciones") hayEtiqueta = true;
+        QVERIFY(hayEtiqueta);
+        // ‹ › mueven los mismos días
+        w.moverPeriodo(-1);
+        QCOMPARE(w.rango(), (QPair<QDate, QDate>{{2025, 1, 14}, {2025, 2, 28}}));
+        QCOMPARE(w.findChild<QTableView*>("tablaMovimientos")->model()->rowCount(), 1);
+
+        // Elegir «Entre fechas…» en el combo pide las fechas; si se cancela, vuelve a lo de antes
+        w.setVista(VentanaPrincipal::Vista::Mes);
+        alAbrir<DialogoFechas>([](DialogoFechas* d) { d->reject(); });
+        w.findChild<QComboBox*>("comboVista")->setCurrentIndex(3);
+        QCOMPARE(w.vista(), VentanaPrincipal::Vista::Mes);
+        QCOMPARE(w.findChild<QComboBox*>("comboVista")->currentIndex(), 0);
+        alAbrir<DialogoFechas>([](DialogoFechas* d) { d->elegir(DialogoFechas::EntreFechas, {2025, 2, 1}, {2025, 2, 20}); d->accept(); });
+        w.findChild<QComboBox*>("comboVista")->setCurrentIndex(3);
+        QCOMPARE(w.vista(), VentanaPrincipal::Vista::Rango);
+        QCOMPARE(w.rango(), (QPair<QDate, QDate>{{2025, 2, 1}, {2025, 2, 20}}));
+    }
+
+    void exportarTodoYEntreFechas()
+    {
+        Cuentas c(":memory:");
+        QVERIFY(c.crearMovimiento(mov(c, {2024, 12, 31}, "Sueldo", Tipo::Ingreso, 1000)).ok);
+        QVERIFY(c.crearMovimiento(mov(c, {2025, 2, 1}, "Sueldo", Tipo::Ingreso, 2000)).ok);
+        QVERIFY(c.crearMovimiento(mov(c, {2025, 3, 15}, "Sueldo", Tipo::Ingreso, 3000)).ok);
+        VentanaPrincipal w(c);
+        w.setVista(VentanaPrincipal::Vista::Mes);
+        w.setPeriodo({2025, 3, 1});
+        const auto filas = [](const QString& ruta) {
+            QFile f(ruta);
+            return f.open(QIODevice::ReadOnly) ? leerCsv(decodificarArchivo(f.readAll())).filas.size() : -1;
+        };
+        QVERIFY(w.exportarArchivo(dir_.filePath("visto.csv")));
+        QCOMPARE(filas(dir_.filePath("visto.csv")), 1);
+        QVERIFY(w.exportarArchivo(dir_.filePath("todo.csv"), {}, {}));
+        QCOMPARE(filas(dir_.filePath("todo.csv")), 3);
+        QVERIFY(w.exportarArchivo(dir_.filePath("rango.csv"), {2024, 12, 1}, {2025, 2, 1}));
+        QCOMPARE(filas(dir_.filePath("rango.csv")), 2);
+
+        // El diálogo: por defecto lo que se ve; «hasta» antes que «desde» no se acepta
+        DialogoFechas d(DialogoFechas::Modo::Exportar, "Marzo 2025", {2025, 3, 1}, {2025, 3, 31});
+        QCOMPARE(d.alcance(), int(DialogoFechas::Periodo));
+        QVERIFY(!d.findChild<QDateEdit*>("inputDesde")->isEnabled());
+        d.elegir(DialogoFechas::EntreFechas, {2025, 3, 10}, {2025, 3, 1});
+        QVERIFY(d.findChild<QDateEdit*>("inputDesde")->isEnabled());
+        d.accept();
+        QVERIFY(d.result() != QDialog::Accepted);
+        QVERIFY(!d.findChild<QLabel*>("labelError")->text().isEmpty());
+        d.elegir(DialogoFechas::Todo);
+        d.accept();
+        QCOMPARE(d.result(), int(QDialog::Accepted));
+    }
+
+    void copiaAutomaticaAlAbrir()
+    {
+        QTemporaryDir dir;
+        Cuentas c(dir.filePath("cuentas.db"));
+        {
+            VentanaPrincipal w(c);                                // al abrir: la copia de hoy
+        }
+        const QString hoy = QStringLiteral("respaldos/cuentas-%1.db").arg(QDate::currentDate().toString(Qt::ISODate));
+        QVERIFY(QFile::exists(dir.filePath(hoy)));
+        VentanaPrincipal w(c);
+        QVERIFY(!w.respaldar().hecha);                            // una por día
     }
 };
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(ingresos-gastos VERSION 2.7.1 LANGUAGES CXX)
+project(ingresos-gastos VERSION 2.8.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -41,6 +41,7 @@ add_library(igcore STATIC
     nucleo/db.h nucleo/db.cpp nucleo/db_interno.h nucleo/db_operaciones.cpp nucleo/db_importacion.cpp nucleo/db_sinc.cpp
     nucleo/sincronizacion.h
     nucleo/dibujo.h nucleo/dibujo.cpp
+    nucleo/reportes.h nucleo/reportes.cpp
 )
 target_include_directories(igcore PUBLIC nucleo)
 target_link_libraries(igcore PUBLIC Qt6::Core Qt6::Gui Qt6::Sql Qt6::Network comun_sinc)

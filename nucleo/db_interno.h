@@ -108,6 +108,27 @@ inline const QStringList CONFIG_SINCRONIZADA = {};
 // La cuenta que trae el programa: mismo uuid en todos los dispositivos, así no se duplica al sincronizar
 inline const QString UUID_PRINCIPAL = QStringLiteral("cuenta-principal");
 
+// Transferencias entre cuentas (2.8.0): sus dos categorías internas, con el mismo uuid en todos los dispositivos.
+// Cada transferencia son dos movimientos con uuid «tr-<grupo>-s» (salida) y «tr-<grupo>-e» (entrada).
+inline const QString UUID_TRANSF_SALIDA = QStringLiteral("transferencia-salida");
+inline const QString UUID_TRANSF_ENTRADA = QStringLiteral("transferencia-entrada");
+// Nombre largo a propósito: una categoría «Transferencia» de la persona (pagos por transferencia) es otra cosa
+inline const QString NOMBRE_TRANSFERENCIA = QStringLiteral("Transferencia entre cuentas");
+// Para sacarlas de los totales, las tortas y los presupuestos (c = categorias)
+#define SIN_TRANSFERENCIAS " AND c.uuid NOT IN ('transferencia-salida', 'transferencia-entrada') "
+inline bool esUuidTransferencia(const QString& uuidCategoria)
+{
+    return uuidCategoria == UUID_TRANSF_SALIDA || uuidCategoria == UUID_TRANSF_ENTRADA;
+}
+// La otra mitad de una transferencia: «tr-x-s» <-> «tr-x-e» (vacío si el uuid no es de una transferencia armada acá)
+inline QString uuidPareja(const QString& uuid)
+{
+    if (!uuid.startsWith(QLatin1String("tr-")) || uuid.size() < 6) return QString();
+    if (uuid.endsWith(QLatin1String("-s"))) return uuid.chopped(1) + QLatin1Char('e');
+    if (uuid.endsWith(QLatin1String("-e"))) return uuid.chopped(1) + QLatin1Char('s');
+    return QString();
+}
+
 // Categorías con las que arranca una base nueva (se pueden editar y agregar más)
 inline const char* const GASTOS_INICIALES[] = {"Supermercado", "Transporte", "Vestimenta", "Internet", "Teléfono",
                                         "Servicios", "Salud", "Gastos Varios"};
@@ -162,9 +183,14 @@ inline QString hash32(const QString& s)
     return QString::fromLatin1(QCryptographicHash::hash(s.toUtf8(), QCryptographicHash::Sha1).toHex().left(32));
 }
 
+// En una transferencia también trae la otra mitad (p) y su cuenta (pc)
 inline const char* const SELECT_MOVIMIENTO =
-    "SELECT m.id, m.fecha, m.categoria_id, c.nombre, c.tipo, c.color, m.monto, m.descripcion, m.cuenta_id, COALESCE(cu.nombre, '') "
+    "SELECT m.id, m.fecha, m.categoria_id, c.nombre, c.tipo, c.color, m.monto, m.descripcion, m.cuenta_id, COALESCE(cu.nombre, ''), "
+    "c.uuid, COALESCE(p.cuenta_id, 0), COALESCE(pc.nombre, '') "
     "FROM movimientos m JOIN categorias c ON c.id = m.categoria_id LEFT JOIN cuentas_dinero cu ON cu.id = m.cuenta_id "
+    "LEFT JOIN movimientos p ON c.uuid IN ('transferencia-salida', 'transferencia-entrada') AND m.uuid LIKE 'tr-%' AND p.borrado = 0 "
+    "     AND p.uuid = substr(m.uuid, 1, length(m.uuid) - 1) || CASE substr(m.uuid, -1) WHEN 's' THEN 'e' ELSE 's' END "
+    "LEFT JOIN cuentas_dinero pc ON pc.id = p.cuenta_id "
     "WHERE m.borrado = 0 ";
 
 inline Movimiento leerMovimiento(const QSqlQuery& q)
@@ -180,6 +206,9 @@ inline Movimiento leerMovimiento(const QSqlQuery& q)
     m.descripcion = q.value(7).toString();
     m.cuentaId = q.value(8).toLongLong();
     m.cuenta = q.value(9).toString();
+    m.transferencia = esUuidTransferencia(q.value(10).toString());
+    m.cuentaContrariaId = q.value(11).toLongLong();
+    m.cuentaContraria = q.value(12).toString();
     return m;
 }
 

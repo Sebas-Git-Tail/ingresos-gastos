@@ -14,6 +14,14 @@ struct Resultado {
     qint64 id = 0;
 };
 
+struct ResultadoRespaldo {
+    bool ok = true;
+    bool hecha = false;             // false: la de hoy ya estaba
+    QString ruta;                   // la copia de hoy
+    QString error;
+    int borradas = 0;               // copias viejas que se borraron (quedan las últimas)
+};
+
 struct ResultadoImportacion {
     int nuevos = 0;
     int repetidos = 0;              // ya estaban (misma fecha, categoría, monto y descripción): no se duplican
@@ -48,7 +56,9 @@ public:
     QString ruta() const { return ruta_; }
 
     // ---- categorías
-    QList<Categoria> categorias(std::optional<Tipo> tipo = std::nullopt) const;   // ingresos primero, cada tipo por orden alfabético; con la cantidad de movimientos
+    // Ingresos primero, cada tipo por orden alfabético; con la cantidad de movimientos. Sin las dos categorías
+    // internas de las transferencias (no se eligen ni se editan).
+    QList<Categoria> categorias(std::optional<Tipo> tipo = std::nullopt) const;
     qint64 categoriaInicial(Tipo tipo) const;                   // con la que arranca un movimiento nuevo (ingresos: «Propinas Ariel» si existe; si no, la más antigua); 0 si no hay
     std::optional<Categoria> categoria(qint64 id) const;
     std::optional<Categoria> buscarCategoria(const QString& nombre, Tipo tipo) const;   // sin importar mayúsculas
@@ -64,6 +74,14 @@ public:
     Resultado actualizarMovimiento(const Movimiento& m);
     Resultado eliminarMovimiento(qint64 id);
     Resultado restaurarMovimiento(qint64 id);        // deshace eliminarMovimiento (también llega al celular)
+    // (en una transferencia, eliminar y restaurar cualquiera de las dos mitades hace lo mismo con la otra)
+
+    // ---- transferencias entre cuentas: no son ingreso ni gasto (no cuentan en los totales, las tortas ni los
+    // presupuestos), solo pasan plata de una cuenta a la otra. Se guardan como dos movimientos con dos
+    // categorías internas («Transferencia», una de gasto y otra de ingreso, con uuid fijo): así se sincronizan
+    // como cualquier movimiento y una versión vieja ve una salida y una entrada (los saldos le dan bien).
+    Resultado guardarTransferencia(const Transferencia& t);          // id 0 = nueva; devuelve el id de la salida
+    std::optional<Transferencia> transferencia(qint64 idMovimiento) const;   // desde cualquiera de las dos mitades
 
     // ---- cuentas de dinero (efectivo, banco, Mercado Pago...). Siempre está la principal.
     QList<CuentaDinero> cuentasDinero() const;                  // la principal primero; con saldo y movimientos
@@ -97,6 +115,7 @@ public:
     QVector<TotalPeriodo> totalesPorMes(int anio) const;               // 12 meses
     QList<QPair<int, TotalPeriodo>> totalesPorAnio() const;            // cada año con movimientos
     QList<TotalCategoria> totalesPorCategoria(const QDate& desde, const QDate& hasta, Tipo tipo) const;   // de mayor a menor
+    QList<TotalEtiqueta> totalesPorEtiqueta(const QDate& desde, const QDate& hasta) const;   // #etiquetas de las descripciones; de más a menos plata
     QDate primeraFecha() const;
     QDate ultimaFecha() const;
 
@@ -105,6 +124,10 @@ public:
     ResultadoImportacion importar(const QList<FilaImportada>& filas);
 
     Resultado backup(const QString& destino);
+    // Copia automática: una por día («cuentas-AAAA-MM-DD.db») en la carpeta; quedan las últimas `cuantas`.
+    // Si la de hoy ya está, no hace nada. Con una base en memoria (pruebas) tampoco.
+    ResultadoRespaldo respaldoAutomatico(const QString& carpeta, const QDate& hoy = QDate::currentDate(), int cuantas = 7);
+    static QString carpetaRespaldos(const QString& rutaBase);   // «respaldos» al lado de la base
 
     // ---- sincronización
     QString dispositivo() const override { return dispositivo_; }
@@ -132,6 +155,9 @@ private:
     void filtrarCuenta(QString& sql, QVariantList& params) const;   // «AND m.cuenta_id = ?» si se mira una cuenta
     QString nombreLibreCuenta(const QString& nombre, qint64 excepto) const;
     void crearCategoriasIniciales();
+    QList<Categoria> todasLasCategorias(std::optional<Tipo> tipo = std::nullopt) const;   // también las de las transferencias
+    QPair<qint64, qint64> asegurarCategoriasTransferencia();      // (salida, entrada); dentro de una transacción
+    Centavos sumaHasta(const QDate& hasta) const;                  // ingresos - gastos con las transferencias (para el saldo)
     int colorLibre(Tipo tipo) const;
     qint64 siguienteCambio();
     void marcar(const char* tabla, qint64 id);                    // cambio local: fecha, autor y número de cambio
