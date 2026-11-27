@@ -606,6 +606,19 @@ private slots:
         w.findChild<QComboBox*>("comboVista")->setCurrentIndex(3);
         QCOMPARE(w.vista(), VentanaPrincipal::Vista::Rango);
         QCOMPARE(w.rango(), (QPair<QDate, QDate>{{2025, 2, 1}, {2025, 2, 20}}));
+        // Volver a elegir «Entre fechas…» estando ahí pide otras fechas
+        QApplication::processEvents();
+        alAbrir<DialogoFechas>([](DialogoFechas* d) { d->elegir(DialogoFechas::EntreFechas, {2025, 3, 1}, {2025, 3, 31}); d->accept(); });
+        emit w.findChild<QComboBox*>("comboVista")->activated(3);
+        QCOMPARE(w.rango(), (QPair<QDate, QDate>{{2025, 3, 1}, {2025, 3, 31}}));
+        // ‹ › con un mes entero: el mes anterior entero
+        w.moverPeriodo(-1);
+        QCOMPARE(w.rango(), (QPair<QDate, QDate>{{2025, 2, 1}, {2025, 2, 28}}));
+        // Ir a una fecha (lo recién cargado, «Hoy») sale de «Entre fechas» y muestra su mes
+        w.setPeriodo({2025, 6, 10});
+        QCOMPARE(w.vista(), VentanaPrincipal::Vista::Mes);
+        QCOMPARE(w.findChild<QComboBox*>("comboVista")->currentIndex(), 0);
+        QCOMPARE(w.rango(), (QPair<QDate, QDate>{{2025, 6, 1}, {2025, 6, 30}}));
     }
 
     void exportarTodoYEntreFechas()

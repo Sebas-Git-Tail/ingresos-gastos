@@ -182,8 +182,8 @@ void Controlador::anterior()
     if (vista_ == 0) setPeriodo(periodo_.addMonths(-1));
     else if (vista_ == 1) setPeriodo(periodo_.addYears(-1));
     else if (vista_ == 3) {
-        const qint64 dias = desdeRango_.daysTo(hastaRango_) + 1;   // los mismos días, antes
-        verRango(desdeRango_.addDays(-dias).toString(Qt::ISODate), hastaRango_.addDays(-dias).toString(Qt::ISODate));
+        const auto [desde, hasta] = rangoMovido(desdeRango_, hastaRango_, -1);   // los mismos meses o días, antes
+        verRango(desde.toString(Qt::ISODate), hasta.toString(Qt::ISODate));
     }
 }
 
@@ -192,8 +192,8 @@ void Controlador::siguiente()
     if (vista_ == 0) setPeriodo(periodo_.addMonths(1));
     else if (vista_ == 1) setPeriodo(periodo_.addYears(1));
     else if (vista_ == 3) {
-        const qint64 dias = desdeRango_.daysTo(hastaRango_) + 1;
-        verRango(desdeRango_.addDays(dias).toString(Qt::ISODate), hastaRango_.addDays(dias).toString(Qt::ISODate));
+        const auto [desde, hasta] = rangoMovido(desdeRango_, hastaRango_, 1);
+        verRango(desde.toString(Qt::ISODate), hasta.toString(Qt::ISODate));
     }
 }
 

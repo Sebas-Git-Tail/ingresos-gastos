@@ -114,6 +114,18 @@ QPair<QDate, QDate> periodoAnterior(const QDate& desde, const QDate& hasta)
     return {desde.addDays(-dias), desde.addDays(-1)};
 }
 
+QPair<QDate, QDate> rangoMovido(const QDate& desde, const QDate& hasta, int pasos)
+{
+    if (!desde.isValid() || !hasta.isValid() || hasta < desde) return {};
+    if (desde.day() == 1 && hasta.day() == hasta.daysInMonth()) {
+        const int meses = (hasta.year() - desde.year()) * 12 + hasta.month() - desde.month() + 1;
+        const QDate d = desde.addMonths(pasos * meses);
+        return {d, d.addMonths(meses).addDays(-1)};
+    }
+    const qint64 dias = desde.daysTo(hasta) + 1;
+    return {desde.addDays(pasos * dias), hasta.addDays(pasos * dias)};
+}
+
 QString nombrePeriodo(const QDate& desde, const QDate& hasta)
 {
     if (!desde.isValid() || !hasta.isValid()) return QStringLiteral("todo");

@@ -185,9 +185,20 @@ VentanaPrincipal::VentanaPrincipal(Cuentas& cuentas, QWidget* parent)
     connect(ui->btnAnterior, &QToolButton::clicked, this, [this] { moverPeriodo(-1); });
     connect(ui->btnSiguiente, &QToolButton::clicked, this, [this] { moverPeriodo(+1); });
     connect(ui->btnHoy, &QPushButton::clicked, this, [this] { setPeriodo(QDate::currentDate()); });
-    connect(ui->comboVista, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int i) {
-        if (Vista(i) == Vista::Rango) pedirRango();      // pide las fechas (si se cancela, vuelve a lo de antes)
-        else setVista(Vista(i));
+    // «Recién pedido»: al elegir «Entre fechas…» llegan currentIndexChanged y después activated; el diálogo se abre una vez
+    auto rangoRecienPedido = std::make_shared<bool>(false);
+    connect(ui->comboVista, qOverload<int>(&QComboBox::currentIndexChanged), this, [this, rangoRecienPedido](int i) {
+        if (Vista(i) != Vista::Rango) {
+            setVista(Vista(i));
+            return;
+        }
+        pedirRango();                                    // pide las fechas (si se cancela, vuelve a lo de antes)
+        *rangoRecienPedido = true;
+        QTimer::singleShot(0, this, [rangoRecienPedido] { *rangoRecienPedido = false; });
+    });
+    // Volver a elegir «Entre fechas…» estando ahí no cambia el índice: igual pide otras fechas
+    connect(ui->comboVista, qOverload<int>(&QComboBox::activated), this, [this, rangoRecienPedido](int i) {
+        if (Vista(i) == Vista::Rango && vista_ == Vista::Rango && !*rangoRecienPedido) pedirRango();
     });
     connect(ui->btnNuevoIngreso, &QPushButton::clicked, this, &VentanaPrincipal::nuevoIngreso);
     connect(ui->btnNuevoGasto, &QPushButton::clicked, this, &VentanaPrincipal::nuevoGasto);
@@ -369,6 +380,10 @@ void VentanaPrincipal::setPeriodo(const QDate& fecha)
 {
     if (!fecha.isValid()) return;
     periodo_ = QDate(fecha.year(), fecha.month(), 1);
+    if (vista_ == Vista::Rango) {                     // ir a una fecha (lo guardado, lo importado, «Hoy»): su mes
+        setVista(Vista::Mes);
+        return;
+    }
     refrescar();
 }
 
@@ -377,8 +392,8 @@ void VentanaPrincipal::moverPeriodo(int pasos)
     if (vista_ == Vista::Mes) setPeriodo(periodo_.addMonths(pasos));
     else if (vista_ == Vista::Anio) setPeriodo(periodo_.addYears(pasos));
     else if (vista_ == Vista::Rango) {
-        const qint64 dias = desdeRango_.daysTo(hastaRango_) + 1;   // los mismos días, antes o después
-        verRango(desdeRango_.addDays(pasos * dias), hastaRango_.addDays(pasos * dias));
+        const auto [desde, hasta] = rangoMovido(desdeRango_, hastaRango_, pasos);   // los mismos meses o días, antes o después
+        verRango(desde, hasta);
     }
 }
 

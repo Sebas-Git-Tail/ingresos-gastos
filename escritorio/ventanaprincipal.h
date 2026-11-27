@@ -30,7 +30,7 @@ public:
     QDate periodo() const { return periodo_; }          // día 1 del mes elegido
     void setVista(Vista v);
     void setPeriodo(const QDate& fecha);
-    void moverPeriodo(int pasos);                       // -1 = anterior, +1 = siguiente (en «Entre fechas», los mismos días antes o después)
+    void moverPeriodo(int pasos);                       // -1 = anterior, +1 = siguiente (en «Entre fechas», los mismos meses o días antes o después)
     void verRango(const QDate& desde, const QDate& hasta);   // vista «Entre fechas»
     QPair<QDate, QDate> rango() const;                  // desde / hasta (inválidas en «Todo»)
     QString textoPeriodo() const;

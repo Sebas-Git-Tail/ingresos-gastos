@@ -661,6 +661,13 @@ private slots:
         QCOMPARE(periodoAnterior({2026, 1, 1}, {2026, 12, 31}), (P{{2025, 1, 1}, {2025, 12, 31}}));
         QCOMPARE(periodoAnterior({2026, 3, 11}, {2026, 3, 20}), (P{{2026, 3, 1}, {2026, 3, 10}}));
         QCOMPARE(periodoAnterior({}, {}), P());
+        // ‹ › en «Entre fechas»: meses enteros se corren por meses; lo demás, por días
+        QCOMPARE(rangoMovido({2026, 11, 1}, {2026, 11, 30}, -1), (P{{2026, 10, 1}, {2026, 10, 31}}));
+        QCOMPARE(rangoMovido({2026, 1, 1}, {2026, 1, 31}, 1), (P{{2026, 2, 1}, {2026, 2, 28}}));
+        QCOMPARE(rangoMovido({2026, 9, 1}, {2026, 11, 30}, -1), (P{{2026, 6, 1}, {2026, 8, 31}}));
+        QCOMPARE(rangoMovido({2024, 1, 1}, {2024, 12, 31}, 1), (P{{2025, 1, 1}, {2025, 12, 31}}));
+        QCOMPARE(rangoMovido({2026, 3, 11}, {2026, 3, 20}, -1), (P{{2026, 3, 1}, {2026, 3, 10}}));
+        QCOMPARE(rangoMovido({2025, 3, 1}, {2025, 4, 15}, -1), (P{{2025, 1, 14}, {2025, 2, 28}}));
         QCOMPARE(nombrePeriodo({2026, 10, 1}, {2026, 10, 31}), QString("octubre 2026"));
         QCOMPARE(nombrePeriodo({2025, 1, 1}, {2025, 12, 31}), QString("2025"));
         QCOMPARE(nombrePeriodo({2026, 3, 1}, {2026, 4, 15}), QString("1/3/2026 al 15/4/2026"));

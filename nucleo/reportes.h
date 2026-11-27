@@ -42,6 +42,9 @@ QStringList etiquetasDe(const QString& descripcion);     // sin repetir (sin imp
 // El período con el que se compara: un mes entero -> el mes anterior; un año entero -> el año anterior;
 // cualquier otro rango -> la misma cantidad de días justo antes
 QPair<QDate, QDate> periodoAnterior(const QDate& desde, const QDate& hasta);
+// El rango corrido «pasos» veces (‹ ›): meses enteros -> los mismos meses antes o después (1/11–30/11 -> octubre);
+// cualquier otro rango -> la misma cantidad de días
+QPair<QDate, QDate> rangoMovido(const QDate& desde, const QDate& hasta, int pasos);
 // "octubre 2026" · "2025" · "1/3/2026 al 15/4/2026"
 QString nombrePeriodo(const QDate& desde, const QDate& hasta);
 // Con qué se compara, para escribir «+12 % que en octubre 2026»: "en octubre 2026" · "en 2025" · "en los 10 días anteriores"

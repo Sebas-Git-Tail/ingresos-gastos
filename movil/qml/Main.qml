@@ -409,6 +409,8 @@ ApplicationWindow {
             }
         }
         onAccepted: {
+            // Fechas al revés: se avisa antes de abrir el selector (si no, deja creado un archivo vacío)
+            if (opcionFechas.checked && desde > hasta) { ventana.avisar("La fecha «hasta» es anterior a «desde»."); return }
             if (opcionTodo.checked) { elegirExportar.desde = ""; elegirExportar.hasta = "" }
             else if (opcionFechas.checked) { elegirExportar.desde = desde; elegirExportar.hasta = hasta }
             else { elegirExportar.desde = App.desdeIso; elegirExportar.hasta = App.hastaIso }
