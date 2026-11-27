@@ -43,13 +43,21 @@ ApplicationWindow {
     Connections {
         target: Qt.application
         function onStateChanged() {
-            if (Qt.application.state === Qt.ApplicationActive) { App.cargarFijos(); App.sincronizarSiCorresponde() }
+            if (Qt.application.state === Qt.ApplicationActive) { App.cargarFijos(); App.respaldar(); App.sincronizarSiCorresponde() }
         }
     }
-    Timer { interval: 1500; running: true; onTriggered: { App.cargarFijos(); App.sincronizarSiCorresponde() } }
+    // Movimientos fijos, copia automática del día (quedan las últimas 7) y sincronización
+    Timer { interval: 1500; running: true; onTriggered: { App.cargarFijos(); App.respaldar(); App.sincronizarSiCorresponde() } }
 
     // Mensajito abajo («Guardado», «Sincronizado…»): AvisoFlotante de Comun.Ui
     function avisar(texto) { aviso.mostrar(texto) }
+    // Borrar sin preguntar: el aviso ofrece «Deshacer» unos segundos (como en la PC)
+    function borrar(id) {
+        const e = App.eliminarMovimiento(id)
+        if (e !== "") { avisar(e); return }
+        aviso.mostrar("Movimiento eliminado", { textoBoton: "Deshacer", milisegundos: 7000,
+                                               alBoton: function() { App.restaurarMovimiento(id) } })
+    }
     Connections { target: App; function onAviso(texto) { ventana.avisar(texto) } }
     AvisoFlotante { id: aviso; margenAbajo: 90 }
 
@@ -76,6 +84,7 @@ ApplicationWindow {
                     MenuItem { text: "Ver un mes"; onTriggered: App.vista = 0 }
                     MenuItem { text: "Ver un año"; onTriggered: App.vista = 1 }
                     MenuItem { text: "Ver todo"; onTriggered: App.vista = 2 }
+                    MenuItem { text: "Entre fechas…"; onTriggered: dialogoRango.abrir() }
                     MenuSeparator {}
                     MenuItem { text: "Ir a hoy"; enabled: App.navegable; onTriggered: App.hoy() }
                 }
@@ -143,7 +152,7 @@ ApplicationWindow {
         if (accion === "categorias") pila.push(paginaCategorias)
         else if (accion === "saldo") dialogoSaldo.abrir()
         else if (accion === "importar") elegirImportar.open()
-        else if (accion === "exportar") { elegirExportar.selectedFile = elegirExportar.currentFolder + "/" + App.nombreExportacion(); elegirExportar.open() }
+        else if (accion === "exportar") dialogoExportar.open()
         else if (accion === "backup") { elegirBackup.selectedFile = elegirBackup.currentFolder + "/" + App.nombreBackup(); elegirBackup.open() }
         else if (accion === "sinc") pila.push(paginaSinc)
         else if (accion === "cuentas") pila.push(paginaCuentas)
@@ -152,7 +161,11 @@ ApplicationWindow {
         else if (accion === "acerca") acerca.open()
     }
 
-    function editar(datos) { pila.push(editor, { datos: datos }) }
+    function editar(datos) {
+        if (datos.transferencia) pila.push(editorTransferencia, { datos: App.transferencia(datos.id) })
+        else pila.push(editor, { datos: datos })
+    }
+    function editarTransferencia(datos) { if (datos && datos.desdeCuenta !== undefined) pila.push(editorTransferencia, { datos: datos }) }
 
     StackView {
         id: pila
@@ -200,9 +213,18 @@ ApplicationWindow {
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 8
-                            Tarjeta { titulo: "Ingresos"; valor: App.ingresosTexto; signo: App.ingresosSigno; marca: ventana.azul }
-                            Tarjeta { titulo: "Gastos"; valor: App.gastosTexto; signo: App.gastosSigno; marca: ventana.naranja }
-                            Tarjeta { titulo: "Resultado"; valor: App.resultadoTexto; signo: App.resultadoSigno; marca: "transparent" }
+                            Tarjeta {
+                                titulo: "Ingresos"; valor: App.ingresosTexto; signo: App.ingresosSigno; marca: ventana.azul
+                                detalle: App.ingresosComparacion; signoDetalle: App.ingresosComparacionSigno
+                            }
+                            Tarjeta {
+                                titulo: "Gastos"; valor: App.gastosTexto; signo: App.gastosSigno; marca: ventana.naranja
+                                detalle: App.gastosComparacion; signoDetalle: App.gastosComparacionSigno
+                            }
+                            Tarjeta {
+                                titulo: "Resultado"; valor: App.resultadoTexto; signo: App.resultadoSigno; marca: "transparent"
+                                detalle: App.resultadoComparacion
+                            }
                         }
                     }
                 }
@@ -213,7 +235,10 @@ ApplicationWindow {
                     visible: App.avisoPresupuesto !== ""
                     text: App.avisoPresupuesto
                     onClicked: ventana.abrir("categorias")
-                    background: Rectangle { color: ventana.oscuro ? "#5a2a1a" : "#fde0d0" }
+                    // Pasado: naranja fuerte; solo cerca (80 %): amarillo
+                    background: Rectangle {
+                        color: App.presupuestoPasado ? (ventana.oscuro ? "#5a2a1a" : "#fde0d0") : (ventana.oscuro ? "#4a3d12" : "#fdf0c8")
+                    }
                     contentItem: RowLayout {
                         spacing: 8
                         Image { source: "qrc:/IngresosGastos/iconos/aviso.svg"; sourceSize: Qt.size(20, 20); Layout.alignment: Qt.AlignTop }
@@ -249,6 +274,7 @@ ApplicationWindow {
     Component { id: paginaCuentas; PaginaCuentas {} }
     Component { id: paginaFijos; PaginaFijos {} }
     Component { id: editorFijo; EditorFijo {} }
+    Component { id: editorTransferencia; EditorTransferencia {} }
     // Lo nuevo de esta versión: se abre solo la primera vez (comun/ui/qml/DialogoNovedades.qml)
     DialogoNovedades { id: novedades }
 
@@ -345,13 +371,106 @@ ApplicationWindow {
         }
         onAccepted: if (datos.nuevos > 0) App.importar(archivo)
     }
+    // Qué exportar: lo que se ve, todo o entre dos fechas
+    Dialog {
+        id: dialogoExportar
+        property string desde: ""
+        property string hasta: ""
+        title: "Exportar CSV"
+        modal: true
+        anchors.centerIn: parent
+        width: Math.min(ventana.width - 32, 380)
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        onAboutToShow: {
+            opcionVisto.checked = true
+            desde = App.desdeIso || App.hoyIso()
+            hasta = App.hastaIso || App.hoyIso()
+        }
+        ColumnLayout {
+            anchors.fill: parent
+            RadioButton { id: opcionVisto; text: "Lo que se ve: " + App.periodoTexto; checked: true }
+            RadioButton { id: opcionTodo; text: "Todo" }
+            RadioButton { id: opcionFechas; text: "Entre estas fechas:" }
+            RowLayout {
+                Layout.fillWidth: true
+                enabled: opcionFechas.checked
+                Button {
+                    Layout.fillWidth: true
+                    text: "Desde " + dialogoExportar.desde.split("-").reverse().join("/")
+                    font.capitalization: Font.MixedCase
+                    onClicked: { selectorExportar.campo = "desde"; selectorExportar.abrir(dialogoExportar.desde) }
+                }
+                Button {
+                    Layout.fillWidth: true
+                    text: "Hasta " + dialogoExportar.hasta.split("-").reverse().join("/")
+                    font.capitalization: Font.MixedCase
+                    onClicked: { selectorExportar.campo = "hasta"; selectorExportar.abrir(dialogoExportar.hasta) }
+                }
+            }
+        }
+        onAccepted: {
+            if (opcionTodo.checked) { elegirExportar.desde = ""; elegirExportar.hasta = "" }
+            else if (opcionFechas.checked) { elegirExportar.desde = desde; elegirExportar.hasta = hasta }
+            else { elegirExportar.desde = App.desdeIso; elegirExportar.hasta = App.hastaIso }
+            const nombre = opcionVisto.checked ? App.nombreExportacion() : App.nombreExportacionEntre(elegirExportar.desde, elegirExportar.hasta)
+            elegirExportar.selectedFile = elegirExportar.currentFolder + "/" + nombre
+            elegirExportar.open()
+        }
+    }
+    SelectorFecha {
+        id: selectorExportar
+        property string campo: "desde"
+        onElegida: (iso) => { if (campo === "desde") dialogoExportar.desde = iso; else dialogoExportar.hasta = iso }
+    }
     FileDialog {
         id: elegirExportar
+        property string desde: ""
+        property string hasta: ""
         title: "Guardar CSV"
         fileMode: FileDialog.SaveFile
         defaultSuffix: "csv"
         nameFilters: ["CSV (*.csv)"]
-        onAccepted: { const e = App.exportar(selectedFile); if (e !== "") ventana.avisar("No se pudo guardar: " + e) }
+        onAccepted: { const e = App.exportarEntre(selectedFile, desde, hasta); if (e !== "") ventana.avisar("No se pudo guardar: " + e) }
+    }
+
+    // «Entre fechas…»: ver (y comparar con los mismos días antes) un rango a elección
+    Dialog {
+        id: dialogoRango
+        property string desde: ""
+        property string hasta: ""
+        function abrir() { desde = App.desdeIso || App.hoyIso(); hasta = App.hastaIso || App.hoyIso(); open() }
+        title: "Ver entre fechas"
+        modal: true
+        anchors.centerIn: parent
+        width: Math.min(ventana.width - 32, 380)
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        ColumnLayout {
+            anchors.fill: parent
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "Las tarjetas y los totales se comparan con la misma cantidad de días justo antes."
+                color: ventana.tintaSecundaria
+            }
+            Button {
+                Layout.fillWidth: true
+                text: "Desde: " + App.fechaTexto(dialogoRango.desde)
+                font.capitalization: Font.MixedCase
+                onClicked: { selectorRango.campo = "desde"; selectorRango.abrir(dialogoRango.desde) }
+            }
+            Button {
+                Layout.fillWidth: true
+                text: "Hasta: " + App.fechaTexto(dialogoRango.hasta)
+                font.capitalization: Font.MixedCase
+                onClicked: { selectorRango.campo = "hasta"; selectorRango.abrir(dialogoRango.hasta) }
+            }
+        }
+        onAccepted: App.verRango(desde, hasta)
+    }
+    SelectorFecha {
+        id: selectorRango
+        property string campo: "desde"
+        onElegida: (iso) => { if (campo === "desde") dialogoRango.desde = iso; else dialogoRango.hasta = iso }
     }
     FileDialog {
         id: elegirBackup
@@ -374,6 +493,8 @@ ApplicationWindow {
             wrapMode: Text.WordWrap
             text: "Ingresos, gastos y saldo de la cuenta, en pesos argentinos.\n\n"
                   + "Se sincroniza con Ingresos y Gastos de la PC (Linux).\n\n"
+                  + "Todos los días guarda sola una copia de la base dentro de la app (quedan las últimas 7). "
+                  + "Para tener una afuera del celular, usá «Copia de seguridad».\n\n"
                   + "Hecho con C++ y Qt."
         }
     }

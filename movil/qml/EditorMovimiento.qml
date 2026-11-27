@@ -45,7 +45,7 @@ Page {
             ToolButton {
                 icon.source: "qrc:/IngresosGastos/iconos/eliminar.svg"
                 visible: !editor.nuevo
-                onClicked: confirmar.open()
+                onClicked: { const id = editor.datos.id; pila.pop(); ventana.borrar(id) }   // sin preguntar: el aviso ofrece «Deshacer»
                 Accessible.name: "Eliminar"
             }
         }
@@ -187,16 +187,4 @@ Page {
         }
     }
 
-    Dialog {
-        id: confirmar
-        title: "¿Eliminar este movimiento?"
-        modal: true
-        anchors.centerIn: parent
-        standardButtons: Dialog.Yes | Dialog.No
-        onAccepted: {
-            const e = App.eliminarMovimiento(editor.datos.id)
-            if (e === "") pila.pop()
-            else error.text = e
-        }
-    }
 }

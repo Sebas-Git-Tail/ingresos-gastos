@@ -1,4 +1,4 @@
-// Totales por mes (del año), por categoría (del período) y por año.
+// Totales por categoría (del período, con lo que cambió contra el período anterior), #etiquetas, por mes (del año) y por año.
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -74,6 +74,38 @@ Page {
                         horizontalAlignment: Text.AlignRight
                         Layout.preferredWidth: 52
                     }
+                    Label {   // contra el período anterior: "+12 %" (en gastos, subir va en rojo)
+                        visible: App.vista !== 2
+                        text: modelData.antes
+                        font.pixelSize: 12
+                        color: modelData.signoAntes !== 0 ? ventana.colorMonto(modelData.signoAntes) : ventana.tintaApagada
+                        horizontalAlignment: Text.AlignRight
+                        Layout.preferredWidth: 48
+                    }
+                }
+            }
+
+            Titulo { text: "Etiquetas"; visible: App.totalesEtiquetas.length > 0 }
+            Label {
+                visible: App.totalesEtiquetas.length > 0
+                Layout.fillWidth: true
+                text: "Las palabras con # en la descripción (por ejemplo #vacaciones)."
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
+                color: ventana.tintaApagada
+            }
+            Repeater {
+                model: App.totalesEtiquetas
+                ColumnLayout {
+                    required property var modelData
+                    Layout.fillWidth: true
+                    spacing: 0
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Label { text: modelData.nombre; font.pixelSize: 15; Layout.fillWidth: true; elide: Text.ElideRight }
+                        Label { text: modelData.total; color: ventana.colorMonto(modelData.signo); font.pixelSize: 15 }
+                    }
+                    Label { text: modelData.detalle; font.pixelSize: 12; color: ventana.tintaSecundaria; Layout.fillWidth: true; elide: Text.ElideRight }
                 }
             }
 

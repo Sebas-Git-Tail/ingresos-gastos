@@ -353,6 +353,36 @@ private slots:
         QMetaObject::invokeMethod(ventana, "abrir", Q_ARG(QVariant, QVariant("apps")));
         capturar("11-apps");
 
+        // 2.8.0: transferencia, borrar con «Deshacer», entre fechas con comparación, exportar y etiquetas
+        QMetaObject::invokeMethod(ventana, "editarTransferencia", Q_ARG(QVariant, QVariant(c.nuevaTransferencia())));
+        capturar("12-transferencia");
+        QVERIFY(buscar(ventana->contentItem(), "EditorTransferencia"));
+        QVariantMap t = c.nuevaTransferencia();
+        t.insert("monto", "1.000");
+        QCOMPARE(c.guardarTransferencia(t), QString());
+        qint64 idTransf = 0;
+        for (int i = 0; i < c.movimientos()->rowCount(); ++i)
+            if (c.movimientos()->en(i).transferencia) idTransf = c.movimientos()->en(i).id;
+        QVERIFY(idTransf);
+        QMetaObject::invokeMethod(ventana, "editar", Q_ARG(QVariant, QVariant(c.movimiento(idTransf))));   // abre el de transferencias
+        capturar("13-editar-transferencia");
+        const int antes = cuentas.movimientos().size();
+        QMetaObject::invokeMethod(ventana, "borrar", Q_ARG(QVariant, QVariant(idTransf)));
+        QCOMPARE(cuentas.movimientos().size(), antes - 2);
+        capturar("14-borrado-con-deshacer");
+        QCOMPARE(c.guardarMovimiento(mov(1, hoy, idCat(c, 1, "Transporte"), "3.000", "Micro #vacaciones")), QString());
+        c.verRango(QDate::currentDate().addMonths(-1).toString(Qt::ISODate), hoy);
+        QQuickItem* pila = buscar(ventana->contentItem(), "StackView");
+        QVERIFY(pila);
+        QVERIFY(QMetaObject::invokeMethod(pila, "popToIndex", Q_ARG(int, 0)));   // volver a la pantalla principal
+        QTest::qWait(400);
+        capturar("15-movimientos-entre-fechas");
+        pestania(2);
+        capturar("16-totales-entre-fechas");
+        pestania(0);
+        QMetaObject::invokeMethod(ventana, "abrir", Q_ARG(QVariant, QVariant("exportar")));
+        QTest::qWait(300);
+        capturar("17-exportar");
         // Las advertencias de QML son errores de verdad (propiedad mal escrita, tipo que no existe...)
         QVERIFY2(advertencias.isEmpty(), qPrintable(advertencias.join('\n')));
         Controlador::setInstancia(nullptr);
@@ -385,6 +415,164 @@ private slots:
         QVERIFY(c.fijos().isEmpty());
         QCOMPARE(c.eliminarCuenta(banco.value("id").toLongLong(), db.cuentaPrincipal()), QString());
         QCOMPARE(c.cuentas().size(), 1);
+    }
+
+    // ---- 2.8.0
+    void deshacerAlBorrar()
+    {
+        Cuentas db(":memory:");
+        Controlador c(db);
+        c.setVista(2);
+        QCOMPARE(c.guardarMovimiento(mov(1, "2026-11-01", idCat(c, 1, "Supermercado"), "100")), QString());
+        const qint64 id = c.movimientos()->en(0).id;
+        QCOMPARE(c.eliminarMovimiento(id), QString());
+        QCOMPARE(c.movimientos()->rowCount(), 0);
+        QCOMPARE(c.restaurarMovimiento(id), QString());
+        QCOMPARE(c.movimientos()->rowCount(), 1);
+        QCOMPARE(db.movimiento(id)->monto, Centavos(10000));
+        QVERIFY(!c.restaurarMovimiento(id).isEmpty());            // ya estaba
+    }
+
+    void transferenciasDesdeElCelular()
+    {
+        Cuentas db(":memory:");
+        Controlador c(db);
+        c.setVista(2);
+        const qint64 banco = c.crearCuenta("Banco", "").value("id").toLongLong();
+        QCOMPARE(c.guardarMovimiento(mov(0, "2026-11-01", idCat(c, 0, "Sueldo"), "10.000")), QString());
+        QVariantMap t = c.nuevaTransferencia();
+        QCOMPARE(t.value("desdeCuenta").toLongLong(), db.cuentaPrincipal());
+        QCOMPARE(t.value("hastaCuenta").toLongLong(), banco);
+        t.insert("monto", "cero");
+        QVERIFY(!c.guardarTransferencia(t).isEmpty());
+        t.insert("monto", "4.000");
+        t.insert("fechaIso", "2026-11-02");
+        t.insert("descripcion", "Al banco");
+        QCOMPARE(c.guardarTransferencia(t), QString());
+        QCOMPARE(c.ingresosTexto(), QString("$ 10.000,00"));        // no es ingreso ni gasto
+        QCOMPARE(c.gastosTexto(), QString("$ 0,00"));
+        QCOMPARE(c.movimientos()->rowCount(), 3);
+        const auto modelo = c.movimientos();
+        QStringList nombres;
+        for (int i = 0; i < modelo->rowCount(); ++i) nombres << modelo->data(modelo->index(i), ModeloMovimientos::RolCategoria).toString();
+        QVERIFY2(nombres.contains("Transferencia a Banco") && nombres.contains("Transferencia desde Principal"), qPrintable(nombres.join(", ")));
+        c.setFiltroTipo(3);
+        QCOMPARE(c.movimientos()->rowCount(), 2);
+        c.setFiltroTipo(1);
+        QCOMPARE(c.movimientos()->rowCount(), 1);                   // el sueldo y no la entrada de la transferencia
+        c.setFiltroTipo(0);
+        qint64 id = 0;
+        for (int i = 0; i < modelo->rowCount(); ++i) if (modelo->en(i).transferencia) id = modelo->en(i).id;
+        QVERIFY(c.movimiento(id).value("transferencia").toBool());
+        QVariantMap leida = c.transferencia(id);
+        QCOMPARE(leida.value("monto").toString(), QString("4.000,00"));
+        QCOMPARE(leida.value("hastaCuenta").toLongLong(), banco);
+        QVERIFY(c.transferencia(c.movimientos()->en(c.movimientos()->rowCount() - 1).id).isEmpty());   // el sueldo
+        QCOMPARE(c.repetirTransferencia(id).value("id").toInt(), 0);
+        QVERIFY(c.fijoDesdeMovimiento(id).isEmpty());               // no se repite todos los meses
+        c.setCuentaVista(banco);
+        QCOMPARE(c.saldoTexto(), QString("$ 4.000,00"));
+        c.setCuentaVista(0);
+        QCOMPARE(c.eliminarMovimiento(id), QString());               // las dos mitades
+        QCOMPARE(c.movimientos()->rowCount(), 1);
+        QCOMPARE(c.restaurarMovimiento(id), QString());
+        QCOMPARE(c.movimientos()->rowCount(), 3);
+    }
+
+    void avisoCercaDelPresupuesto()
+    {
+        Cuentas db(":memory:");
+        Controlador c(db);
+        c.setVista(0);
+        c.hoy();
+        const qint64 super = idCat(c, 1, "Supermercado");
+        QCOMPARE(c.fijarPresupuesto(super, "100"), QString());
+        QVERIFY(c.avisoPresupuesto().isEmpty());
+        const QString hoy = QDate::currentDate().toString(Qt::ISODate);
+        QCOMPARE(c.guardarMovimiento(mov(1, hoy, super, "85")), QString());
+        QCOMPARE(c.avisoPresupuesto(), QString("Cerca del presupuesto: Supermercado (85 %)"));
+        QVERIFY(!c.presupuestoPasado());
+        QCOMPARE(c.guardarMovimiento(mov(1, hoy, super, "20")), QString());
+        QCOMPARE(c.avisoPresupuesto(), QString("Te pasaste del presupuesto: Supermercado (105 %)"));
+        QVERIFY(c.presupuestoPasado());
+    }
+
+    void entreFechasComparacionYBusqueda()
+    {
+        Cuentas db(":memory:");
+        Controlador c(db);
+        QCOMPARE(c.guardarMovimiento(mov(1, "2025-02-10", idCat(c, 1, "Supermercado"), "1.000")), QString());
+        QCOMPARE(c.guardarMovimiento(mov(1, "2025-03-10", idCat(c, 1, "Supermercado"), "1.200", "Coto")), QString());
+        QCOMPARE(c.guardarMovimiento(mov(0, "2025-03-12", idCat(c, 0, "Sueldo"), "5.000")), QString());
+        QCOMPARE(c.guardarMovimiento(mov(1, "2025-04-02", idCat(c, 1, "Transporte"), "300", "Viaje #vacaciones")), QString());
+        c.setVista(0);
+        c.irAPeriodo(-1);
+        QCOMPARE(c.periodoTexto(), QString("Abril 2025"));          // guardarMovimiento saltó al último
+        c.anterior();
+        QCOMPARE(c.gastosComparacion(), QString("+20 % que en febrero 2025"));
+        QCOMPARE(c.gastosComparacionSigno(), -1);                   // más gastos: rojo
+        QCOMPARE(c.ingresosComparacion(), QString("Sin datos en febrero 2025"));
+        QCOMPARE(c.resultadoComparacion(), QString("febrero 2025: -$ 1.000,00"));
+        QCOMPARE(c.totalesCategorias().at(1).toMap().value("antes").toString(), QString("+20 %"));
+        QCOMPARE(c.totalesCategorias().at(1).toMap().value("signoAntes").toInt(), -1);
+        c.setVista(2);
+        QVERIFY(c.gastosComparacion().isEmpty());
+
+        c.verRango("2025-04-15", "2025-03-01");                      // al revés también
+        QCOMPARE(c.vista(), 3);
+        QCOMPARE(c.periodoTexto(), QString("1/3/2025 al 15/4/2025"));
+        QCOMPARE(c.desdeIso(), QString("2025-03-01"));
+        QCOMPARE(c.gastosTexto(), QString("$ 1.500,00"));
+        QCOMPARE(c.gastosComparacion(), QString("+50 % que en los 46 días anteriores"));
+        QCOMPARE(c.movimientos()->rowCount(), 3);
+        QCOMPARE(c.barras().value("etiquetas").toStringList().size(), 2);   // marzo y abril
+        QCOMPARE(c.totalesEtiquetas().size(), 1);
+        QCOMPARE(c.totalesEtiquetas().first().toMap().value("nombre").toString(), QString("#vacaciones"));
+        QVERIFY(c.navegable());
+        c.anterior();
+        QCOMPARE(c.desdeIso(), QString("2025-01-14"));
+        QCOMPARE(c.hastaIso(), QString("2025-02-28"));
+        c.siguiente();
+        c.irAPeriodo(1);                                             // tocar la barra de abril
+        QCOMPARE(c.vista(), 0);
+        QCOMPARE(c.periodoTexto(), QString("Abril 2025"));
+
+        // Buscador por monto y etiqueta
+        c.setVista(2);
+        c.setBusqueda(">1000");
+        QCOMPARE(c.movimientos()->rowCount(), 2);
+        c.setBusqueda("super 1100-1300");
+        QCOMPARE(c.movimientos()->rowCount(), 1);
+        c.setBusqueda("#vacaciones");
+        QCOMPARE(c.movimientos()->rowCount(), 1);
+        c.setBusqueda(QString());
+    }
+
+    void exportarTodoOEntreFechasYCopiaDiaria()
+    {
+        QTemporaryDir dir;
+        Cuentas db(dir.filePath("cuentas.db"));
+        Controlador c(db);
+        QCOMPARE(c.guardarMovimiento(mov(0, "2024-12-31", idCat(c, 0, "Sueldo"), "10")), QString());
+        QCOMPARE(c.guardarMovimiento(mov(0, "2025-02-01", idCat(c, 0, "Sueldo"), "20")), QString());
+        QCOMPARE(c.guardarMovimiento(mov(0, "2025-03-15", idCat(c, 0, "Sueldo"), "30")), QString());
+        const auto filas = [&](const QString& nombre) {
+            QFile f(dir.filePath(nombre));
+            return f.open(QIODevice::ReadOnly) ? leerCsv(decodificarArchivo(f.readAll())).filas.size() : -1;
+        };
+        QCOMPARE(c.exportarEntre(QUrl::fromLocalFile(dir.filePath("todo.csv")), "", ""), QString());
+        QCOMPARE(filas("todo.csv"), 3);
+        QCOMPARE(c.exportarEntre(QUrl::fromLocalFile(dir.filePath("rango.csv")), "2024-12-01", "2025-02-01"), QString());
+        QCOMPARE(filas("rango.csv"), 2);
+        QVERIFY(!c.exportarEntre(QUrl::fromLocalFile(dir.filePath("x.csv")), "2025-03-01", "2025-01-01").isEmpty());
+        QCOMPARE(c.nombreExportacionEntre("", ""), QString("movimientos-todos.csv"));
+        QCOMPARE(c.nombreExportacionEntre("2025-01-01", "2025-02-01"), QString("movimientos-2025-01-01-al-2025-02-01.csv"));
+        c.verRango("2025-01-01", "2025-01-31");
+        QCOMPARE(c.nombreExportacion(), QString("movimientos-2025-01-01-al-2025-01-31.csv"));
+
+        QVERIFY(c.respaldar());                                      // la copia de hoy
+        QVERIFY(!c.respaldar());                                     // una por día
+        QVERIFY(QFile::exists(c.carpetaRespaldos() + "/cuentas-" + QDate::currentDate().toString(Qt::ISODate) + ".db"));
     }
 };
 

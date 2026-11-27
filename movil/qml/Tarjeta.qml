@@ -9,6 +9,8 @@ Rectangle {
     property string valor
     property int signo: 0                           // verde (1), rojo (-1) o color normal (0)
     property color marca: "transparent"
+    property string detalle: ""                     // comparación con el período anterior («+12 % que en octubre»)
+    property int signoDetalle: 0                    // 1 bueno (verde), -1 malo (rojo), 0 color apagado
 
     Layout.fillWidth: true
     Layout.preferredWidth: 1
@@ -36,6 +38,16 @@ Rectangle {
             font.bold: true
             fontSizeMode: Text.HorizontalFit             // los montos grandes se achican, nunca se cortan
             minimumPixelSize: 9
+        }
+        Label {
+            Layout.fillWidth: true
+            visible: tarjeta.detalle !== ""
+            text: tarjeta.detalle
+            font.pixelSize: 10
+            color: tarjeta.signoDetalle !== 0 ? ventana.colorMonto(tarjeta.signoDetalle) : ventana.tintaApagada
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+            elide: Text.ElideRight
         }
     }
 }

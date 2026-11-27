@@ -110,14 +110,18 @@ o a mano con el botón ⟳ de arriba. En la PC tiene que estar abierto Ingresos 
 | Totales por mes y por año | Tarjetas de ingresos, gastos y resultado del período elegido; pestaña **Totales** por mes (con el total del año), por categoría (con %) y por año |
 | Gráfico de barras | Ingresos y gastos de cada mes del año (o de cada año, en la vista *Todo*). PC: al pasar el mouse muestra los números y un clic abre el mes. Celular: tocar un mes muestra sus números y *Ver mes* |
 | Gráficos de torta | Gastos e ingresos por categoría, con leyenda: nombre, monto y %. Siempre las 7 más grandes; el resto en «Otros» |
-| Exportar / importar CSV | ☰ → **Exportar CSV** (el período que se ve) e **Importar CSV**. Antes de guardar muestra cuántos se agregan, cuántos ya estaban (**no duplica**) y qué categorías nuevas se crean. En el celular se elige el archivo con el selector de Android |
+| Exportar / importar CSV | ☰ → **Exportar CSV**: lo que se ve, **todo** o **entre dos fechas**; e **Importar CSV**. Antes de guardar muestra cuántos se agregan, cuántos ya estaban (**no duplica**) y qué categorías nuevas se crean. En el celular se elige el archivo con el selector de Android |
 | Varias cuentas | ☰ → **Cuentas** (celular: Opciones → Cuentas): efectivo, banco, Mercado Pago… cada una con su saldo inicial. Cada movimiento va en una cuenta; con más de una, arriba se elige cuál mirar (o **Todas**): movimientos, tarjetas, gráficos, totales y saldo se ven de esa cuenta. La que ya estaba se llama **Principal** (se puede renombrar, no eliminar) y se queda con el saldo inicial de antes |
-| Presupuestos | ☰ → **Categorías** → **Presupuesto…** (celular: tocar la categoría → Presupuesto por mes): cuánto pensás gastar por mes. Arriba aparece «⚠ Te pasaste del presupuesto…» (y en la PC también «Cerca del presupuesto» desde el 80 %) |
+| Transferencias | Con más de una cuenta: botón **Transferencia** (PC, Ctrl+T) o **Transferir** (celular). Pasa plata de una cuenta a otra: **no** cuenta como ingreso ni gasto (ni en las tarjetas, ni en las tortas, ni en los presupuestos), solo cambia el saldo de cada cuenta. En la base son dos movimientos (salida y entrada) en dos categorías internas «Transferencia entre cuentas»; borrar o editar una mitad hace lo mismo con la otra. Se sincroniza como cualquier movimiento |
+| Etiquetas | Palabras con **#** en la descripción (`Pasajes #vacaciones`). Se buscan como cualquier palabra y en **Totales** aparece cuánto se movió con cada una. No cambia la base |
+| Presupuestos | ☰ → **Categorías** → **Presupuesto…** (celular: tocar la categoría → Presupuesto por mes): cuánto pensás gastar por mes. Arriba aparece «Te pasaste del presupuesto…» o «Cerca del presupuesto» desde el 80 % (en la PC y en el celular) |
 | Movimientos fijos | ☰ → **Movimientos fijos** (sueldo, alquiler, internet…): se cargan **solos** el día elegido de cada mes, al abrir el programa. También desde un movimiento: clic derecho (celular: mantener apretado) → **Repetir todos los meses…**. Si se borra uno de los que se cargaron, no vuelve; si la PC y el celular lo cargan los dos, al sincronizar queda uno solo |
-| Copia de seguridad | ☰ → **Copia de seguridad**: guarda la base completa donde quieras |
+| Copia de seguridad | ☰ → **Copia de seguridad**: guarda la base completa donde quieras. Además, **todos los días** se guarda sola una copia en la carpeta `respaldos` al lado de la base (`cuentas-AAAA-MM-DD.db`; quedan las últimas 7) |
+| Reportes | Las tarjetas comparan con el período anterior («+12 % que en octubre 2026»); en **Totales**, cada categoría dice cuánto cambió. Con **Entre fechas…** se mira cualquier rango (y se compara con los mismos días justo antes) |
 
-Arriba se elige el período: **Mes**, **Año** o **Todo** (PC: ◀ ▶, Alt+← / Alt+→ y **Hoy**; celular: ‹ › y
-tocar el nombre del período). El buscador ignora mayúsculas y tildes y busca también por monto.
+Arriba se elige el período: **Mes**, **Año**, **Todo** o **Entre fechas…** (PC: ◀ ▶, Alt+← / Alt+→ y **Hoy**; celular: ‹ › y
+tocar el nombre del período). El buscador ignora mayúsculas y tildes y busca también por monto: un número
+(`15.000`), un rango (`1000-5000`) o una comparación (`>20000`, `<=3.000`), solos o con palabras (`super >10000`).
 Los colores de los gráficos se adaptan al tema claro u oscuro (de Plasma o del celular).
 
 ### Importar desde ExpenLess!
@@ -177,10 +181,12 @@ muestran las 7 categorías más grandes.
 | `comun/` | Código compartido con otros programas ([comun-qt](https://github.com/Sebas-Git-Tail/comun-qt), traído con `git subtree`): **no editar acá**, sino en comun-qt |
 | `nucleo/dibujo.cpp` | El dibujo de los gráficos de barras y de torta |
 | `nucleo/csv.cpp`, `dinero.cpp` | CSV (y ExpenLess); formato de pesos, montos y fechas |
+| `nucleo/reportes.cpp` | Búsqueda (con montos), #etiquetas y comparación con el período anterior (lo usan la PC y el celular) |
 | `escritorio/*.ui` | Las pantallas de la PC: **se editan en Qt Designer** y se convierten en código al compilar |
 | `escritorio/ventanaprincipal.cpp` | Ventana principal de la PC |
 | `escritorio/dialogosincronizacion.cpp` | Ventana *Sincronizar con el celular* |
 | `escritorio/dialogocuentas.cpp`, `dialogofijos.cpp` | Ventanas *Cuentas* y *Movimientos fijos* |
+| `escritorio/dialogotransferencia.cpp`, `dialogofechas.cpp` | *Transferencia* y elegir fechas (exportar, «Entre fechas…») |
 | `movil/qml/*.qml` | Las pantallas del celular (se pueden editar con el editor visual de Qt Creator) |
 | `movil/controlador.cpp` | Lo que usan las pantallas del celular (en QML se llama `App`) |
 | `movil/graficosquick.cpp` | Los gráficos para Qt Quick (mismo dibujo que en la PC) |
@@ -190,6 +196,6 @@ muestran las 7 categorías más grandes.
 Si renombrás un widget en Designer, hay que cambiarlo también en el `.cpp` (el compilador avisa).
 
 ## Se guarda en
-- **PC**: datos en `~/.local/share/ingresos-gastos/cuentas.db`; ventana y opciones en
+- **PC**: datos en `~/.local/share/ingresos-gastos/cuentas.db` (copias diarias en `respaldos/`, al lado); ventana y opciones en
   `~/.config/ingresos-gastos/ingresos-gastos.conf`. Para usar otra base: `ingresos-gastos /ruta/otra.db`
-- **Celular**: dentro de la app (se borra si se desinstala: sincronizá o hacé una copia de seguridad antes)
+- **Celular**: dentro de la app, con sus copias diarias (se borra todo si se desinstala: sincronizá o hacé una copia de seguridad antes)

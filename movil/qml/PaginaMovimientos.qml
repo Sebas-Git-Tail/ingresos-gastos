@@ -1,4 +1,5 @@
 // Lista de movimientos del período, agrupados por día. Tocar uno lo edita; mantener apretado, más opciones.
+// Borrar no pregunta: se borra y el aviso de abajo ofrece «Deshacer» (como en la PC).
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -19,16 +20,16 @@ Page {
             spacing: 8
             TextField {
                 Layout.fillWidth: true
-                placeholderText: "Buscar…"
+                placeholderText: "Buscar (también #etiqueta, >20000)…"
                 text: App.busqueda
                 onTextChanged: App.busqueda = text
                 inputMethodHints: Qt.ImhNoPredictiveText
             }
             ComboBox {
-                model: ["Todos", "Ingresos", "Gastos"]
+                model: ["Todos", "Ingresos", "Gastos", "Transferencias"]
                 currentIndex: App.filtroTipo
                 onActivated: (i) => App.filtroTipo = i
-                implicitWidth: 120
+                implicitWidth: 150
             }
         }
 
@@ -60,10 +61,11 @@ Page {
                 required property string descripcion
                 required property string montoTexto
                 required property bool ingreso
+                required property bool transferencia
                 width: lista.width
                 height: 60
                 onClicked: ventana.editar(App.movimiento(idMov))
-                onPressAndHold: { menuFila.idMov = idMov; menuFila.popup() }
+                onPressAndHold: { menuFila.idMov = idMov; menuFila.transferencia = transferencia; menuFila.popup() }
 
                 contentItem: RowLayout {
                     spacing: 12
@@ -81,7 +83,13 @@ Page {
                             Layout.fillWidth: true
                         }
                     }
-                    Label { text: fila.montoTexto; font.pixelSize: 15; font.bold: fila.ingreso; color: ventana.colorMonto(fila.ingreso ? 1 : -1) }
+                    // Una transferencia no es ingreso ni gasto: el monto en el color normal
+                    Label {
+                        text: fila.montoTexto
+                        font.pixelSize: 15
+                        font.bold: fila.ingreso && !fila.transferencia
+                        color: ventana.colorMonto(fila.transferencia ? 0 : fila.ingreso ? 1 : -1)
+                    }
                 }
             }
 
@@ -121,26 +129,30 @@ Page {
                 highlighted: true
                 onClicked: ventana.editar(App.nuevoMovimiento(1))
             }
+            Button {   // con una sola cuenta no hay a dónde transferir
+                Layout.fillWidth: true
+                visible: App.cuentas.length > 1
+                text: "Transferir"
+                onClicked: ventana.editarTransferencia(App.nuevaTransferencia())
+            }
         }
     }
 
     Menu {
         id: menuFila
         property var idMov
+        property bool transferencia: false
         MenuItem { text: "Editar"; onTriggered: ventana.editar(App.movimiento(menuFila.idMov)) }
-        MenuItem { text: "Repetir con fecha de hoy"; onTriggered: ventana.editar(App.repetir(menuFila.idMov)) }
-        MenuItem { text: "Repetir todos los meses"; onTriggered: ventana.editarFijo(App.fijoDesdeMovimiento(menuFila.idMov)) }
-        MenuItem { text: "Eliminar"; onTriggered: confirmarBorrar.abrir(menuFila.idMov) }
-    }
-
-    Dialog {
-        id: confirmarBorrar
-        property var idMov
-        function abrir(id) { idMov = id; open() }
-        title: "¿Eliminar este movimiento?"
-        modal: true
-        anchors.centerIn: parent
-        standardButtons: Dialog.Yes | Dialog.No
-        onAccepted: App.eliminarMovimiento(idMov)
+        MenuItem {
+            text: "Repetir con fecha de hoy"
+            onTriggered: menuFila.transferencia ? ventana.editarTransferencia(App.repetirTransferencia(menuFila.idMov))
+                                                : ventana.editar(App.repetir(menuFila.idMov))
+        }
+        MenuItem {   // los fijos son ingresos o gastos
+            text: "Repetir todos los meses"
+            enabled: !menuFila.transferencia
+            onTriggered: ventana.editarFijo(App.fijoDesdeMovimiento(menuFila.idMov))
+        }
+        MenuItem { text: "Eliminar"; onTriggered: ventana.borrar(menuFila.idMov) }
     }
 }

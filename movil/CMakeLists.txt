@@ -20,6 +20,7 @@ qt_add_qml_module(igmovil
         qml/PaginaCuentas.qml
         qml/PaginaFijos.qml
         qml/EditorFijo.qml
+        qml/EditorTransferencia.qml
     RESOURCES
         iconos/menu.svg
         iconos/desplegar.svg

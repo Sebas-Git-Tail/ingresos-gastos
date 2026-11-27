@@ -19,6 +19,7 @@ public:
         RolIngreso,
         RolMontoTexto,      // "+$ 1.234,56" / "-$ 50,00"
         RolDescripcion,
+        RolTransferencia,   // una mitad de una transferencia entre cuentas (no es ingreso ni gasto)
     };
 
     using QAbstractListModel::QAbstractListModel;

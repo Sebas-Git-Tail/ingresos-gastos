@@ -1,5 +1,6 @@
 #include "modelomovimientos.h"
 #include "dinero.h"
+#include "reportes.h"
 #include <algorithm>
 
 namespace {
@@ -35,11 +36,12 @@ QVariant ModeloMovimientos::data(const QModelIndex& i, int rol) const
     case RolId: return m.id;
     case RolDia: return m.fecha.toString(Qt::ISODate);
     case RolDiaTexto: return diaTexto(m.fecha);
-    case RolCategoria: return m.categoria;
-    case RolColor: return paleta_[std::clamp(m.color, 0, 7)];
+    case RolCategoria: return textoCategoria(m);     // en una transferencia: «Transferencia a Banco»
+    case RolColor: return m.transferencia ? QColor(0x89, 0x87, 0x81) : paleta_[std::clamp(m.color, 0, 7)];
     case RolIngreso: return m.tipo == Tipo::Ingreso;
     case RolMontoTexto: return formatearPesosConSigno(m.tipo == Tipo::Ingreso ? m.monto : -m.monto);
     case RolDescripcion: return m.descripcion;
+    case RolTransferencia: return m.transferencia;
     }
     return {};
 }
@@ -47,5 +49,6 @@ QVariant ModeloMovimientos::data(const QModelIndex& i, int rol) const
 QHash<int, QByteArray> ModeloMovimientos::roleNames() const
 {
     return {{RolId, "idMov"}, {RolDia, "dia"}, {RolDiaTexto, "diaTexto"}, {RolCategoria, "categoria"}, {RolColor, "colorCategoria"},
-            {RolIngreso, "ingreso"}, {RolMontoTexto, "montoTexto"}, {RolDescripcion, "descripcion"}};
+            {RolIngreso, "ingreso"}, {RolMontoTexto, "montoTexto"}, {RolDescripcion, "descripcion"},
+            {RolTransferencia, "transferencia"}};
 }
